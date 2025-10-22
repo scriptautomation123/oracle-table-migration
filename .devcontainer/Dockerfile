@@ -34,7 +34,8 @@ ENV LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
 ENV PATH=$ORACLE_HOME:$PATH
 
 # Install Python packages
-RUN pip3 install --no-cache-dir \
+# Using --break-system-packages is safe in a container environment
+RUN pip3 install --no-cache-dir --break-system-packages \
     oracledb \
     jinja2 \
     jsonschema \
