@@ -414,24 +414,45 @@ class TableDiscovery:
         """Get complete column definitions as DDL for CREATE TABLE statement (Oracle 19c+)"""
         cursor = self.connection.cursor()
 
-        query = """
-            SELECT
-                column_name,
-                data_type,
-                data_length,
-                data_precision,
-                data_scale,
-                nullable,
-                data_default,
-                char_length,
-                virtual_column
-            FROM all_tab_columns
-            WHERE owner = :schema
-              AND table_name = :table_name
-            ORDER BY column_id
-        """
-
-        cursor.execute(query, schema=self.schema, table_name=table_name)
+        # Try to check if VIRTUAL_COLUMN exists in all_tab_columns
+        # Different Oracle versions may or may not have this column
+        try:
+            query = """
+                SELECT
+                    column_name,
+                    data_type,
+                    data_length,
+                    data_precision,
+                    data_scale,
+                    nullable,
+                    data_default,
+                    char_length,
+                    CASE WHEN virtual_column = 'YES' THEN 'YES' ELSE 'NO' END as is_virtual
+                FROM all_tab_columns
+                WHERE owner = :schema
+                  AND table_name = :table_name
+                ORDER BY column_id
+            """
+            cursor.execute(query, schema=self.schema, table_name=table_name)
+        except Exception:
+            # If VIRTUAL_COLUMN doesn't exist, query without it
+            query = """
+                SELECT
+                    column_name,
+                    data_type,
+                    data_length,
+                    data_precision,
+                    data_scale,
+                    nullable,
+                    data_default,
+                    char_length,
+                    'NO' as is_virtual
+                FROM all_tab_columns
+                WHERE owner = :schema
+                  AND table_name = :table_name
+                ORDER BY column_id
+            """
+            cursor.execute(query, schema=self.schema, table_name=table_name)
 
         column_defs = []
         for row in cursor.fetchall():
@@ -443,10 +464,10 @@ class TableDiscovery:
             nullable = row[5]
             data_default = row[6]
             char_length = row[7]
-            virtual_column = row[8]
+            is_virtual = row[8]
 
             # Skip virtual columns as they are computed
-            if virtual_column == 'YES':
+            if is_virtual == 'YES':
                 continue
 
             # Build column definition
