@@ -13,22 +13,80 @@ This dev container provides a **high-performance Oracle Database XE 21c environm
 ## 🚀 Performance Configuration
 
 ### Codespace Machine Specifications
+
 - **32 vCPUs** (physical cores)
 - **64 GB RAM**
 - **128 GB Storage**
 
 ### Resource Allocation
-- **Oracle Container**: 16 cores, 32GB RAM, 8GB SGA
-- **Workspace Container**: 8 cores, 16GB RAM
-- **Optimized for**: High-volume migrations, concurrent testing, performance benchmarking
 
-For detailed performance configuration, see [performance-config.md](performance-config.md)
+#### Oracle Database Container
+
+- **CPU Limit**: 16 cores (50% of total)
+- **CPU Reservation**: 8 cores (guaranteed)
+- **Memory Limit**: 32 GB (50% of total)
+- **Memory Reservation**: 16 GB (guaranteed)
+- **Shared Memory (SGA)**: 8 GB
+- **tmpfs**: 8 GB for /dev/shm
+
+#### Workspace Container
+
+- **CPU Limit**: 8 cores (25% of total)
+- **CPU Reservation**: 4 cores (guaranteed)
+- **Memory Limit**: 16 GB (25% of total)
+- **Memory Reservation**: 8 GB (guaranteed)
+
+### Oracle Performance Tuning
+
+The Oracle XE container is configured with:
+
+- `shm_size: 8gb` - Shared memory for System Global Area (SGA)
+- Archive logging disabled for testing (better performance)
+- Character set: AL32UTF8 (UTF-8 support)
+
+#### Recommended Initialization Parameters
+
+Connect as SYSDBA and tune these parameters for performance testing:
+
+```sql
+-- Connect as SYSDBA
+sqlplus sys/Oracle123!@localhost:1521/XEPDB1 as sysdba
+
+-- Increase SGA size (within XE limits)
+ALTER SYSTEM SET sga_target=4G SCOPE=SPFILE;
+ALTER SYSTEM SET pga_aggregate_target=2G SCOPE=SPFILE;
+
+-- Optimize for OLTP workloads
+ALTER SYSTEM SET optimizer_mode='ALL_ROWS' SCOPE=BOTH;
+ALTER SYSTEM SET optimizer_index_cost_adj=100 SCOPE=BOTH;
+
+-- Parallel query execution (use available CPUs)
+ALTER SYSTEM SET parallel_max_servers=16 SCOPE=BOTH;
+ALTER SYSTEM SET parallel_min_servers=4 SCOPE=BOTH;
+
+-- Buffer cache settings
+ALTER SYSTEM SET db_cache_size=2G SCOPE=SPFILE;
+
+-- Shared pool
+ALTER SYSTEM SET shared_pool_size=512M SCOPE=SPFILE;
+
+-- Commit behavior
+ALTER SYSTEM SET commit_write='BATCH,NOWAIT' SCOPE=BOTH;
+
+-- For interval partitioning performance
+ALTER SYSTEM SET deferred_segment_creation=FALSE SCOPE=BOTH;
+
+-- Restart required for SPFILE changes
+SHUTDOWN IMMEDIATE;
+STARTUP;
+```
 
 ## Quick Start
 
 ### 1. Open in Codespaces with Large Machine
 
 Click "Code" → "Codespaces" → "..." → "New with options"
+
 - **Machine type**: Select **32-core** (for performance testing)
 - **Branch**: `feature/oracle-migration-improvements`
 
@@ -42,6 +100,7 @@ bash .devcontainer/setup-performance-test.sh
 ```
 
 This will:
+
 - Wait for Oracle to be ready
 - Apply performance tuning parameters
 - Grant necessary privileges
@@ -120,22 +179,22 @@ sqlplus hr/hr123@oracle:1521/XEPDB1 @master1.sql
 
 ### HR Schema (Non-Partitioned Tables)
 
-| Table | Rows | Purpose |
-|-------|------|---------|
-| **EMPLOYEES** | 5,000 | Test DAY interval on HIRE_DATE |
-| **ORDERS** | 50,000 | Test DAY interval on ORDER_DATE |
-| **DEPARTMENTS** | 50 | Dimension table (reference) |
+| Table           | Rows   | Purpose                         |
+| --------------- | ------ | ------------------------------- |
+| **EMPLOYEES**   | 5,000  | Test DAY interval on HIRE_DATE  |
+| **ORDERS**      | 50,000 | Test DAY interval on ORDER_DATE |
+| **DEPARTMENTS** | 50     | Dimension table (reference)     |
 
 **Connection**: `hr/hr123@oracle:1521/XEPDB1`
 
 ### HR_APP Schema (Mixed Partition States)
 
-| Table | Rows | Current State | Test Scenario |
-|-------|------|---------------|---------------|
-| **TRANSACTIONS** | 500,000 | INTERVAL(MONTH) | Convert to INTERVAL-HASH |
-| **AUDIT_LOG** | 1,000,000 | INTERVAL(DAY) | Change to HOUR + HASH |
-| **EVENTS** | 100,000 | Non-partitioned | Add HOUR interval + HASH |
-| **CUSTOMER_DATA** | 25,000 | Non-partitioned + 3 LOBs | Add MONTH interval + HASH |
+| Table             | Rows      | Current State            | Test Scenario             |
+| ----------------- | --------- | ------------------------ | ------------------------- |
+| **TRANSACTIONS**  | 500,000   | INTERVAL(MONTH)          | Convert to INTERVAL-HASH  |
+| **AUDIT_LOG**     | 1,000,000 | INTERVAL(DAY)            | Change to HOUR + HASH     |
+| **EVENTS**        | 100,000   | Non-partitioned          | Add HOUR interval + HASH  |
+| **CUSTOMER_DATA** | 25,000    | Non-partitioned + 3 LOBs | Add MONTH interval + HASH |
 
 **Connection**: `hr_app/hrapp123@oracle:1521/XEPDB1`
 
@@ -223,11 +282,11 @@ python3 02_generator/generate_scripts.py \
 
 ## Database Credentials
 
-| User | Password | Purpose |
-|------|----------|---------|
-| `system` | `Oracle123!` | Admin (SYSDBA) |
-| `hr` | `hr123` | HR schema owner |
-| `hr_app` | `hrapp123` | HR_APP schema owner |
+| User     | Password     | Purpose             |
+| -------- | ------------ | ------------------- |
+| `system` | `Oracle123!` | Admin (SYSDBA)      |
+| `hr`     | `hr123`      | HR schema owner     |
+| `hr_app` | `hrapp123`   | HR_APP schema owner |
 
 **Connection String Format**: `user/password@oracle:1521/XEPDB1`
 
@@ -237,7 +296,7 @@ python3 02_generator/generate_scripts.py \
 
 ```sql
 -- As HR_APP
-SELECT 
+SELECT
     table_name,
     partitioning_type,
     subpartitioning_type,
@@ -251,7 +310,7 @@ ORDER BY table_name;
 ### Check Table Sizes
 
 ```sql
-SELECT 
+SELECT
     segment_name,
     ROUND(SUM(bytes)/POWER(1024,3), 2) as size_gb,
     COUNT(*) as segment_count
@@ -265,7 +324,7 @@ ORDER BY 2 DESC;
 
 ```sql
 -- After migration
-SELECT 
+SELECT
     table_name,
     partition_name,
     subpartition_count,
@@ -309,7 +368,7 @@ cat ~/oracle/tnsnames.ora
 ```bash
 # Check tablespace usage
 sqlplus hr/hr123@oracle:1521/XEPDB1 <<EOF
-SELECT 
+SELECT
     tablespace_name,
     ROUND(SUM(bytes)/POWER(1024,3), 2) as free_gb
 FROM dba_free_space
@@ -319,7 +378,7 @@ EOF
 
 # Extend tablespace (as SYSTEM)
 sqlplus system/Oracle123!@oracle:1521/XEPDB1 <<EOF
-ALTER DATABASE DATAFILE '/opt/oracle/oradata/XE/XEPDB1/users01.dbf' 
+ALTER DATABASE DATAFILE '/opt/oracle/oradata/XE/XEPDB1/users01.dbf'
     RESIZE 2G;
 EXIT;
 EOF
@@ -332,7 +391,7 @@ EOF
 3. **Validate** config: `--config file.json --validate-only`
 4. **Generate** scripts: `--config file.json`
 5. **Review** scripts in `05_tables/<schema>_<table>/`
-6. **Execute** via SQL*Plus: `@master1.sql`
+6. **Execute** via SQL\*Plus: `@master1.sql`
 7. **Validate** results: check row counts, partitions
 8. **Swap** tables: `@master2.sql`
 
@@ -363,53 +422,145 @@ sqlplus hr_app/hrapp123@oracle:1521/XEPDB1 @.devcontainer/init-scripts/03_create
 sqlplus system/Oracle123!@oracle:1521/XEPDB1 @.devcontainer/init-scripts/04_generate_test_data.sql
 ```
 
-## Performance Tips
+## Performance Monitoring and Optimization
 
-### Best Practices for Performance Testing
+### Real-Time Monitoring SQL Queries
 
-1. **Monitor Before and During Migration**
-   ```bash
-   # Terminal 1: Run migration
-   sqlplus hr/hr123@oracle:1521/XEPDB1 @master1.sql
-   
-   # Terminal 2: Monitor performance
-   watch -n 5 bash .devcontainer/monitor-performance.sh
-   ```
+#### Monitor Active Sessions
 
-2. **Use Parallel Execution** (already in templates)
-   - Default parallelism is set to 4
-   - Can scale up to 16 with available cores
-   - Monitor CPU usage to optimize degree
+```sql
+SELECT
+    sid,
+    serial#,
+    username,
+    status,
+    sql_id,
+    event,
+    wait_time,
+    seconds_in_wait
+FROM v$session
+WHERE username IS NOT NULL
+ORDER BY seconds_in_wait DESC;
+```
 
-3. **Check Partition Distribution**
-   ```sql
-   SELECT partition_name, subpartition_name, num_rows
-   FROM user_tab_subpartitions
-   WHERE table_name = 'EMPLOYEES_NEW'
-   ORDER BY partition_position, subpartition_position;
-   ```
+#### Monitor SQL Performance
 
-4. **Gather Statistics After Migration**
-   ```sql
-   EXEC DBMS_STATS.GATHER_TABLE_STATS('HR', 'EMPLOYEES_NEW', CASCADE=>TRUE);
-   ```
+```sql
+SELECT
+    sql_id,
+    executions,
+    elapsed_time/1000000 as elapsed_sec,
+    cpu_time/1000000 as cpu_sec,
+    buffer_gets,
+    disk_reads,
+    rows_processed
+FROM v$sql
+WHERE elapsed_time > 1000000
+ORDER BY elapsed_time DESC
+FETCH FIRST 20 ROWS ONLY;
+```
 
-5. **Monitor Wait Events**
-   - Check `.devcontainer/monitor-performance.sh` output
-   - Look for I/O wait events
-   - Optimize queries causing contention
+#### Monitor Tablespace Usage
+
+```sql
+SELECT
+    tablespace_name,
+    ROUND(used_space * 8192 / 1024 / 1024, 2) AS used_mb,
+    ROUND(tablespace_size * 8192 / 1024 / 1024, 2) AS total_mb,
+    ROUND(used_percent, 2) AS used_percent
+FROM dba_tablespace_usage_metrics
+ORDER BY used_percent DESC;
+```
+
+#### Monitor Wait Events
+
+```sql
+SELECT
+    event,
+    total_waits,
+    time_waited_micro/1000000 as time_waited_sec,
+    average_wait_ms
+FROM v$system_event
+WHERE wait_class != 'Idle'
+ORDER BY time_waited_micro DESC
+FETCH FIRST 20 ROWS ONLY;
+```
+
+### Performance Testing Best Practices
+
+#### 1. Data Volume Testing
+
+- Test with realistic data volumes (millions of rows)
+- Use the provided test data generation scripts
+- Monitor partition creation and management
+
+#### 2. Concurrent Load Testing
+
+- Run multiple migration scripts in parallel
+- Monitor lock contention
+- Track session counts and resource usage
+
+#### 3. I/O Performance
+
+- Monitor disk read/write operations
+- Track buffer cache hit ratio
+- Analyze wait events related to I/O
+
+#### 4. Partition-Specific Testing
+
+- Test interval partition creation performance
+- Measure partition pruning effectiveness
+- Validate hash sub-partition distribution
+
+#### 5. Migration Workflow Monitoring
+
+```bash
+# Terminal 1: Run migration
+sqlplus hr/hr123@oracle:1521/XEPDB1 @master1.sql
+
+# Terminal 2: Monitor performance
+watch -n 5 bash .devcontainer/monitor-performance.sh
+```
+
+#### 6. Parallel Execution Optimization
+
+- Default parallelism is set to 4
+- Can scale up to 16 with available cores
+- Monitor CPU usage to optimize degree
+
+#### 7. Post-Migration Validation
+
+```sql
+-- Check partition distribution
+SELECT partition_name, subpartition_name, num_rows
+FROM user_tab_subpartitions
+WHERE table_name = 'EMPLOYEES_NEW'
+ORDER BY partition_position, subpartition_position;
+
+-- Gather statistics
+EXEC DBMS_STATS.GATHER_TABLE_STATS('HR', 'EMPLOYEES_NEW', CASCADE=>TRUE);
+```
 
 ### Performance Benchmarks
 
 Expected performance on 32-core Codespace:
 
-| Operation | Target Rate | Notes |
-|-----------|-------------|-------|
-| Initial Data Load | > 100K rows/sec | Bulk INSERT with PARALLEL |
-| Delta Load | > 50K rows/sec | Incremental INSERT |
-| Index Creation | < 30 sec/1M rows | Parallel index build |
-| Partition Creation | < 1 sec | Automatic interval |
-| Table Swap | < 5 sec | RENAME operation |
+| Operation          | Target             | Metric             |
+| ------------------ | ------------------ | ------------------ |
+| Initial Data Load  | > 100,000 rows/sec | Bulk INSERT        |
+| Delta Load         | > 50,000 rows/sec  | Incremental INSERT |
+| Index Creation     | < 30 sec           | Per million rows   |
+| Partition Creation | < 1 sec            | Per partition      |
+| Table Swap         | < 5 sec            | RENAME operation   |
+
+### Resource Utilization Targets
+
+| Resource        | Target Range | Notes                  |
+| --------------- | ------------ | ---------------------- |
+| CPU Usage       | 60-80%       | During peak operations |
+| Memory Usage    | 70-85%       | Oracle SGA + PGA       |
+| I/O Wait        | < 10%        | Disk operations        |
+| Network Latency | < 1ms        | Container-to-container |
 
 ### Resource Monitoring Commands
 
@@ -425,14 +576,65 @@ docker exec oracle-test-db tail -f /opt/oracle/diag/rdbms/xe/XE/trace/alert_XE.l
 
 # Watch active sessions
 watch -n 2 'docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<< "SELECT sid, username, status, event FROM v\$session WHERE username IS NOT NULL;"'
+
+# Monitor disk I/O
+iostat -x 5
+
+# Check network performance
+docker network inspect oracle-network
 ```
 
-## Performance Tips
+### Scaling Considerations
 
-- Use `PARALLEL` hints for large tables (already in templates)
-- Monitor progress with `V$SESSION_LONGOPS`
-- Check partition distribution after migration
-- Gather statistics after migration (`DBMS_STATS`)
+#### When to Use Large Codespace (32-core)
+
+- Testing with > 1M rows per table
+- Running parallel migration jobs
+- Performance benchmarking
+- Load testing with concurrent users
+- Complex partition operations
+
+#### When Smaller Machines Suffice
+
+- Development and debugging
+- Single table migrations
+- Configuration changes
+- Documentation work
+
+### Cost Optimization
+
+GitHub Codespaces billing is based on machine hours:
+
+- **32-core machine**: ~4x cost of 4-core machine
+- Use for performance testing only
+- Stop codespace when not actively testing
+- Consider using prebuilds for faster startup
+
+### Troubleshooting Performance Issues
+
+#### High CPU Usage
+
+1. Check for full table scans: `SELECT * FROM v$sql WHERE plan_hash_value IN (...)`
+2. Verify indexes are being used
+3. Monitor parallel execution
+
+#### High Memory Usage
+
+1. Check SGA/PGA allocation
+2. Monitor session memory: `SELECT * FROM v$sesstat WHERE statistic# IN (15,16)`
+3. Adjust PGA_AGGREGATE_TARGET if needed
+
+#### Slow I/O
+
+1. Check for disk contention
+2. Verify tmpfs is being used for temp operations
+3. Monitor redo log performance
+
+#### Lock Contention
+
+1. Query DBA_BLOCKERS and DBA_WAITERS
+2. Check for long-running transactions
+3. Optimize transaction size in migration scripts
 
 ## VS Code Extensions Installed
 

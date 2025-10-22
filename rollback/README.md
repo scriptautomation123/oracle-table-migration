@@ -27,7 +27,7 @@ sqlplus user/pass@db @emergency_rollback.sql
 
 ## What It Does
 
-```
+```bash
 Step 1: Assess Current State
   └─> Checks which tables exist (current, _OLD, _NEW)
 
@@ -58,7 +58,7 @@ Step 6: Report Status
 ⚠️ **Data inserted/updated after cutover timestamp will be lost**
 
 Example:
-```
+```bash
 Cutover: 2025-10-22 14:00:00
 Inserts: 50 new orders at 14:10:00
 Rollback: 2025-10-22 14:15:00
@@ -70,7 +70,7 @@ Result: Those 50 orders are LOST
 
 ## Output Example
 
-```
+```bash
 ================================================================
 ⚠⚠⚠  EMERGENCY ROLLBACK PROCEDURE  ⚠⚠⚠
 ================================================================
@@ -214,7 +214,7 @@ ALTER TABLE schema.current_name RENAME TO correct_name;
 
 ## Files
 
-```
+```bash
 04_rollback/
 ├── README.md (this file)
 └── emergency_rollback.sql     (340 lines) - Emergency rollback script

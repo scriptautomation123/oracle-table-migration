@@ -1,5 +1,7 @@
 # Generated migration scripts (user-specific output)
 output/
+examples/generated/*
+!examples/generated/README.md
 
 # Migration config (user-specific)
 migration_config.json

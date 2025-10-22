@@ -4,13 +4,26 @@ Get started with the Oracle Table Migration Framework in 5 minutes!
 
 ## Prerequisites
 
-- Python 3.8 or higher
-- Access to Oracle database
-- Oracle Instant Client (for database connectivity)
+- **Python 3.8 or higher**
+- **Access to Oracle database** (11g or higher)
+- **Oracle Instant Client** (automatically configured in dev container)
+- **Database privileges**: SELECT, CREATE TABLE, CREATE INDEX on target schema
 
-## Step 1: Setup Python Environment
+## Option A: Using GitHub Codespaces (Recommended)
 
-### Linux/Mac
+The fastest way to get started with a pre-configured Oracle environment:
+
+1. Open this repository in GitHub Codespaces
+2. Everything is pre-configured (Oracle XE 21c, Python, test data)
+3. Skip to [Step 3: Discover Your Schema](#step-3-discover-your-schema)
+
+See [.devcontainer/README.md](.devcontainer/README.md) for full Codespaces documentation.
+
+## Option B: Local Installation
+
+### Step 1: Setup Python Environment
+
+#### Linux/Mac
 
 ```bash
 # Create virtual environment
@@ -23,7 +36,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Windows (PowerShell)
+#### Windows (PowerShell)
 
 ```powershell
 # Create virtual environment
@@ -39,7 +52,7 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### Windows (Command Prompt)
+#### Windows (Command Prompt)
 
 ```cmd
 # Create virtual environment
@@ -52,16 +65,16 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-## Step 2: Configure Oracle Connection
+## Step 3: Configure Oracle Connection
 
 Prepare your Oracle connection string:
 
-```
+```sql
 user/password@connection_identifier
 ```
 
 Examples:
-```
+```bash
 # Using TNS service name (from tnsnames.ora)
 hr/hr123@PRODDB
 
@@ -82,27 +95,44 @@ myuser/mypass@dbserver.example.com:49125/XEPDB1
 - If using TNS names, ensure `TNS_ADMIN` environment variable points to your `tnsnames.ora` location
 - If using OID, ensure your Oracle client is configured for LDAP directory naming
 
-### Oracle Instant Client (if needed)
+### Step 2: Install Oracle Instant Client
 
 **Linux:**
+
 ```bash
-# Download Oracle Instant Client
-wget https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-basic-linux.x64-21.13.0.0.0dbru.zip
+# Download Oracle Instant Client 21
+wget --progress=dot:giga https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-basic-linux.x64-21.13.0.0.0dbru.zip
+
+# Extract
 unzip instantclient-basic-linux.x64-21.13.0.0.0dbru.zip -d /opt/oracle
+
+# Set environment variable
 export LD_LIBRARY_PATH=/opt/oracle/instantclient_21_13:$LD_LIBRARY_PATH
+
+# Make permanent (add to ~/.bashrc or ~/.zshrc)
+echo 'export LD_LIBRARY_PATH=/opt/oracle/instantclient_21_13:$LD_LIBRARY_PATH' >> ~/.bashrc
 ```
 
 **Windows:**
-1. Download Oracle Instant Client from Oracle website
+
+1. Download from: <https://www.oracle.com/database/technologies/instant-client/downloads.html>
 2. Extract to `C:\oracle\instantclient_21_13`
-3. Add to PATH environment variable
+3. Add to PATH environment variable:
+   ```powershell
+   $env:PATH += ";C:\oracle\instantclient_21_13"
+   ```
 
 **Mac:**
+
 ```bash
+# Using Homebrew
+brew tap InstantClientTap/instantclient
 brew install instantclient-basic
+
+# Or manual download from Oracle website
 ```
 
-## Step 3: Discover Your Schema
+## Step 4: Discover Your Schema
 
 Run discovery mode to scan your Oracle schema and generate configuration:
 
@@ -136,7 +166,7 @@ python3 generate_scripts.py --discover \
 
 This creates: `migration_config.json`
 
-## Step 4: Customize Configuration
+## Step 5: Customize Configuration
 
 Edit `migration_config.json` to customize your migration:
 
@@ -159,7 +189,7 @@ Edit `migration_config.json` to customize your migration:
 }
 ```
 
-## Step 5: Validate Configuration
+## Step 6: Validate Configuration
 
 Validate your configuration before generating scripts:
 
@@ -174,7 +204,7 @@ python3 generate_scripts.py --config migration_config.json \
   --connection "user/password@host:1521/service"
 ```
 
-## Step 6: Generate Migration Scripts
+## Step 7: Generate Migration Scripts
 
 Generate SQL migration scripts:
 
@@ -199,7 +229,7 @@ Each table gets a directory with:
 - `master2.sql` - Phase 2 execution (cutover + cleanup)
 - `README.md` - Migration instructions
 
-## Step 7: Execute Migration
+## Step 8: Execute Migration
 
 ### Phase 1: Structure and Initial Load
 
@@ -351,37 +381,101 @@ deactivate
 
 ## Next Steps
 
-1. ✅ Setup complete - Virtual environment and dependencies installed
-2. ✅ Database connection configured
-3. ✅ Schema discovered and `migration_config.json` created
-4. 📝 Review and customize configuration
-5. ✅ Validate configuration
-6. 🚀 Generate and execute migration scripts
+### Migration Workflow Checklist
+
+- [ ] **Setup**: Virtual environment and dependencies installed
+- [ ] **Connect**: Database connection string configured
+- [ ] **Discover**: Schema scanned and `migration_config.json` created
+- [ ] **Customize**: Configuration reviewed and customized
+- [ ] **Validate**: Configuration validated (with/without database)
+- [ ] **Generate**: Migration SQL scripts generated
+- [ ] **Test**: Scripts tested in non-production environment
+- [ ] **Execute**: Phase 1 completed (structure + data load)
+- [ ] **Verify**: Data validated, row counts checked
+- [ ] **Cutover**: Phase 2 completed (table swap)
+- [ ] **Cleanup**: Old tables dropped, grants restored
+
+### Additional Resources
+
+- **[USER_GUIDE.md](USER_GUIDE.md)** - Comprehensive documentation
+- **[README.md](README.md)** - Architecture and design overview
+- **[.devcontainer/README.md](.devcontainer/README.md)** - GitHub Codespaces setup
+- **[examples/configs/](examples/configs/)** - Sample configuration files
+- **[docs/](docs/)** - Implementation plans and guides
 
 ---
 
-**Quick Reference:**
+## Quick Reference Card
+
+### Environment Setup
 
 | Platform | Activate venv | Python command |
 |----------|---------------|----------------|
 | Linux/Mac | `source venv/bin/activate` | `python3` |
 | Windows PowerShell | `.\venv\Scripts\Activate.ps1` | `python` |
 | Windows cmd | `.\venv\Scripts\activate.bat` | `python` |
+| GitHub Codespaces | Pre-configured | `python3` |
 
-**Common Commands:**
+### Essential Commands
 
 ```bash
-# Discovery
-python3 generate_scripts.py --discover --schema SCHEMA --connection "..."
+# 1. Activate virtual environment (local only)
+source venv/bin/activate
 
-# Validation
+# 2. Discover schema and generate config
+python3 generate_scripts.py --discover \
+  --schema MYSCHEMA \
+  --connection "user/password@host:1521/service"
+
+# 3. Validate configuration
 python3 generate_scripts.py --config migration_config.json --validate-only
 
-# Generation
+# 4. Generate migration scripts
 python3 generate_scripts.py --config migration_config.json
 
-# Execution
-sqlplus user/password @output/SCHEMA_TABLE/master1.sql
+# 5. Execute Phase 1 (structure + data)
+sqlplus user/password@connection @output/SCHEMA_TABLE/master1.sql
+
+# 6. Execute Phase 2 (cutover)
+sqlplus user/password@connection @output/SCHEMA_TABLE/master2.sql
+
+# 7. Deactivate virtual environment
+deactivate
+```
+
+### Connection String Examples
+
+```bash
+# Easy Connect
+user/password@hostname:1521/FREEPDB1
+
+# TNS Name
+user/password@PRODDB
+
+# With custom port
+user/password@dbserver.example.com:49125/XEPDB1
+
+# Codespaces test environment
+hr/hr123@oracle:1521/XEPDB1
+```
+
+### Common Options
+
+```bash
+# Discovery with table filters
+--include "IE_%"           # Include only tables starting with IE_
+--exclude "TEMP_%" "BAK_%" # Exclude temporary/backup tables
+
+# Validation options
+--validate-only            # Validate config without database
+--check-database          # Validate against live database
+--validate-pre            # Pre-migration validation
+--validate-post           # Post-migration validation
+--compare-data            # Compare data between old and new tables
+
+# Generation options
+--config FILE             # Use specific config file
+--validation-report FILE  # Generate validation report
 ```
 
 Happy migrating! 🚀

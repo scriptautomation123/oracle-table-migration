@@ -3,30 +3,32 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 # Install Oracle Instant Client and tools
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
-    python3-pip \
-    python3-dev \
-    build-essential \
-    libaio1t64 \
-    libaio1 \
-    wget \
-    unzip \
-    curl \
-    vim \
-    less \
-    git \
+    python3-pip=24.0+dfsg-1ubuntu1 \
+    python3-dev=3.12.3-0ubuntu2 \
+    build-essential=12.10ubuntu1 \
+    libaio1t64=0.3.113-7build1 \
+    libaio1=0.3.113-7build1 \
+    wget=1.21.4-1ubuntu4.1 \
+    unzip=6.0-28ubuntu4.1 \
+    curl=8.5.0-2ubuntu10.4 \
+    vim=2:9.1.0016-1ubuntu7.3 \
+    less=590-2ubuntu2.1 \
+    git=1:2.43.0-1ubuntu7.1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Oracle Instant Client 21
-RUN mkdir -p /opt/oracle \
-    && cd /opt/oracle \
-    && wget https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-basic-linux.x64-21.13.0.0.0dbru.zip \
-    && wget https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-sqlplus-linux.x64-21.13.0.0.0dbru.zip \
+RUN mkdir -p /opt/oracle
+
+WORKDIR /opt/oracle
+RUN wget --progress=dot:giga https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-basic-linux.x64-21.13.0.0.0dbru.zip \
+    && wget --progress=dot:giga https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-sqlplus-linux.x64-21.13.0.0.0dbru.zip \
     && unzip instantclient-basic-linux.x64-21.13.0.0.0dbru.zip \
     && unzip instantclient-sqlplus-linux.x64-21.13.0.0.0dbru.zip \
-    && rm -f *.zip \
-    && cd instantclient_21_13 \
-    && sh -c "echo /opt/oracle/instantclient_21_13 > /etc/ld.so.conf.d/oracle-instantclient.conf" \
+    && rm -f ./*.zip
+
+WORKDIR /opt/oracle/instantclient_21_13
+RUN sh -c "echo /opt/oracle/instantclient_21_13 > /etc/ld.so.conf.d/oracle-instantclient.conf" \
     && ldconfig
 
 # Set Oracle environment variables

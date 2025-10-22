@@ -27,11 +27,13 @@ table_migration/
 │   └── README.md
 ├── templates/              # Jinja2 SQL templates (9 files, 996 lines)
 ├── rollback/               # Emergency rollback procedures
-├── generated_scripts/      # Output directory for migration scripts
-├── examples/               # Example JSON configurations
+├── output/                 # User's generated scripts (gitignored)
+├── examples/               # Example configurations and docs
+├── docs/                   # Documentation
+├── .devcontainer/          # GitHub Codespaces environment
 ├── requirements.txt        # Python dependencies
-├── USER_GUIDE.md          # Complete user documentation
-└── IMPLEMENTATION_PLAN.md # This file
+├── QUICKSTART.md          # Quick start guide
+└── README.md              # Project landing page
 ```
 
 ### Capabilities
@@ -50,7 +52,6 @@ table_migration/
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │ Step 1: DISCOVERY (Integrated Python)                          │
-│ cd table_migration                                              │
 │ python3 generate_scripts.py --discover --schema MYSCHEMA \      │
 │     --connection "user/pass@host:port/service"                  │
 │                                                                  │
@@ -81,12 +82,12 @@ table_migration/
 │ Step 4: SCRIPT GENERATION (Jinja2)                              │
 │ python3 generate_scripts.py --config migration_config.json      │
 │                                                                  │
-│ Generates: ../generated_scripts/<schema>_<table>/10-70.sql      │
+│ Generates: output/<schema>_<table>/10-70.sql                    │
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Step 5: EXECUTION & POST-VALIDATION                             │
-│ cd ../generated_scripts/<schema>_<table>                        │
+│ cd output/<schema>_<table>                                       │
 │ sqlplus user/pass@db @master1.sql                               │
 │ cd ../../generator                                              │
 │ python3 generate_scripts.py --config migration_config.json \    │
@@ -486,7 +487,7 @@ class MigrationScriptGenerator:
         
         # Setup Jinja2 environment
         self.jinja_env = Environment(
-            loader=FileSystemLoader('01_templates'),
+            loader=FileSystemLoader('templates'),
             autoescape=select_autoescape(['sql']),
             trim_blocks=True,
             lstrip_blocks=True
@@ -790,7 +791,7 @@ table_migration/
 ├── lib/                    # Supporting modules
 ├── templates/           # Jinja2 SQL templates
 ├── rollback/            # Emergency procedures
-├── generated_scripts/   # Output directory
+├── output/             # Generated scripts (gitignored)
 ├── examples/            # Sample configs
 ├── USER_GUIDE.md       # Primary documentation
 └── IMPLEMENTATION_PLAN.md
@@ -839,7 +840,7 @@ python3 generate_scripts.py --config migration_config.json --validate-only
 python3 generate_scripts.py --config migration_config.json
 
 # 5. Execute - run the scripts
-cd ../generated_scripts/MYSCHEMA_TABLENAME
+cd output/MYSCHEMA_TABLENAME
 sqlplus user/pass@host:port/service @master1.sql
 ```
 

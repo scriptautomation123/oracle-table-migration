@@ -22,28 +22,25 @@
 # 1. Install dependencies
 pip install --user oracledb jinja2 jsonschema
 
-# 2. Clone and navigate
-cd table_migration
-
-# 3. Discover schema and generate config
+# 2. Discover schema and generate config
 python3 generate_scripts.py --discover --schema MYSCHEMA \
     --connection "user/password@host:1521/service"
 
-# 4. Customize migration_config.json (optional)
+# 3. Customize migration_config.json (optional)
 vim migration_config.json
 
-# 5. Generate migration scripts
+# 4. Generate migration scripts
 python3 generate_scripts.py --config migration_config.json
 
-# 6. Execute migration
+# 5. Execute migration
 cd output/MYSCHEMA_TABLENAME
 sqlplus user/password@host:1521/service @master1.sql
 ```
 
 ## Architecture
 
-```
-table_migration/
+```bash
+oracle-table-migration/
 ├── generate_scripts.py        # Main CLI tool
 ├── lib/                        # Supporting modules
 │   ├── discovery_queries.py   # Schema discovery
@@ -52,11 +49,16 @@ table_migration/
 │   ├── template_filters.py    # Jinja2 filters
 │   └── migration_schema.json  # JSON schema
 ├── templates/                  # Jinja2 SQL templates
-├── examples/                   # Example configs & outputs
+├── examples/                   # Example configs
 │   ├── configs/               # Sample JSON configs
-│   └── generated/             # Example migration scripts
+│   └── generated/             # Placeholder (scripts go here during testing)
 ├── output/                     # Your generated scripts (gitignored)
 ├── rollback/                   # Emergency procedures
+├── docs/                       # Documentation
+│   ├── README.md              # This file
+│   ├── USER_GUIDE.md          # Complete workflow guide
+│   └── IMPLEMENTATION_PLAN.md # Architecture details
+├── .devcontainer/             # GitHub Codespaces config
 └── requirements.txt
 ```
 
@@ -202,9 +204,11 @@ pip install --user oracledb jinja2 jsonschema
 
 - [USER_GUIDE.md](USER_GUIDE.md) - Complete workflow guide with examples
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Architecture and design
-- [lib/README.md](lib/README.md) - Module documentation
-- [templates/README.md](templates/README.md) - Template documentation
-- [examples/README.md](examples/README.md) - Example configurations
+- [QUICKSTART.md](../QUICKSTART.md) - Quick start guide (5 minutes)
+- [lib/README.md](../lib/README.md) - Module documentation
+- [templates/README.md](../templates/README.md) - Template documentation
+- [examples/README.md](../examples/README.md) - Example configurations
+- [.devcontainer/README.md](../.devcontainer/README.md) - GitHub Codespaces setup
 
 ## Safety Features
 
@@ -225,7 +229,7 @@ pip install --user oracledb jinja2 jsonschema
 | 50-100 GB | 12 | 4 | ~2 hours |
 | > 100 GB | 16 | 8 | ~4 hours |
 
-*Duration estimates for data load phase only*
+> **Note:** Duration estimates for data load phase only
 
 ## Contributing
 

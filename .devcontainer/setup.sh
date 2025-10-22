@@ -12,34 +12,35 @@ echo "Waiting for Oracle database to be ready..."
 max_attempts=30
 attempt=0
 
-while [ $attempt -lt $max_attempts ]; do
-    if sqlplus -s hr/hr123@oracle:1521/FREEPDB1 <<< "SELECT 'DB_READY' FROM DUAL;" | grep -q "DB_READY"; then
-        echo "✓ Oracle database is ready"
-        break
-    fi
-    attempt=$((attempt + 1))
-    echo "  Waiting for database... (attempt $attempt/$max_attempts)"
-    sleep 10
+while [[ ${attempt} -lt ${max_attempts} ]]; do
+	sqlplus_output=$(sqlplus -s hr/hr123@oracle:1521/FREEPDB1 <<<"SELECT 'DB_READY' FROM DUAL;" 2>&1)
+	if echo "${sqlplus_output}" | grep -q "DB_READY"; then
+		echo "✓ Oracle database is ready"
+		break
+	fi
+	attempt=$((attempt + 1))
+	echo "  Waiting for database... (attempt ${attempt}/${max_attempts})"
+	sleep 10
 done
 
-if [ $attempt -eq $max_attempts ]; then
-    echo "✗ Failed to connect to Oracle database"
-    exit 1
+if [[ ${attempt} -eq ${max_attempts} ]]; then
+	echo "✗ Failed to connect to Oracle database"
+	exit 1
 fi
 
 # Install Python requirements
 echo ""
 echo "Installing Python dependencies..."
-if [ -f /workspace/table_migration/requirements.txt ]; then
-    pip3 install --user -r /workspace/table_migration/requirements.txt
-    echo "✓ Python dependencies installed"
+if [[ -f /workspace/table_migration/requirements.txt ]]; then
+	pip3 install --user -r /workspace/table_migration/requirements.txt
+	echo "✓ Python dependencies installed"
 fi
 
 # Create tnsnames.ora for easy connections
 echo ""
 echo "Creating tnsnames.ora..."
 mkdir -p ~/oracle
-cat > ~/oracle/tnsnames.ora <<EOF
+cat >~/oracle/tnsnames.ora <<EOF
 FREEPDB1 =
   (DESCRIPTION =
     (ADDRESS = (PROTOCOL = TCP)(HOST = oracle)(PORT = 1521))
@@ -51,7 +52,7 @@ FREEPDB1 =
 EOF
 
 export TNS_ADMIN=~/oracle
-echo "export TNS_ADMIN=~/oracle" >> ~/.bashrc
+echo "export TNS_ADMIN=~/oracle" >>~/.bashrc
 echo "✓ tnsnames.ora created at ~/oracle/tnsnames.ora"
 
 # Test connections

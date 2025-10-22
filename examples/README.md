@@ -9,9 +9,8 @@ examples/
 ├── configs/           # Example JSON configurations (input)
 │   ├── config_interval_to_interval_hash.json
 │   └── config_nonpartitioned_to_interval_hash.json
-└── generated/         # Example generated scripts (output)
-    ├── MYSCHEMA_IE_PC_OFFER_IN/
-    └── MYSCHEMA_IE_PC_SEQ_OUT/
+└── generated/         # Placeholder for testing (use output/ for real work)
+    └── README.md
 ```
 
 ## Using Examples
@@ -30,14 +29,10 @@ These show:
 - Table-specific customization
 - Migration settings
 
-### 2. See Generated Output
+### 2. Understand Generated Output
 
-```bash
-# View example generated scripts
-ls generated/MYSCHEMA_IE_PC_OFFER_IN/
-```
+When you generate scripts, they will be created in `../output/` with this structure:
 
-Shows what the generator creates:
 - `10_create_table.sql` - CREATE TABLE with partitioning
 - `20_data_load.sql` - Parallel data load
 - `30_create_indexes.sql` - Index creation
@@ -51,8 +46,8 @@ Shows what the generator creates:
 ### 3. Create Your Own Config
 
 ```bash
-# Start with discovery
-cd ../generator
+# Start with discovery (from project root)
+cd ..
 python3 generate_scripts.py --discover --schema YOUR_SCHEMA \
     --connection "user/pass@host:port/service"
 
@@ -128,6 +123,7 @@ The `output/` directory is gitignored so your actual migration scripts stay loca
 
 ## Related Documentation
 
-- [USER_GUIDE.md](../USER_GUIDE.md) - Complete workflow guide
-- [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md) - Architecture details
-- [lib/README.md](../lib/README.md) - Generator usage
+- [QUICKSTART.md](../QUICKSTART.md) - Quick start guide (5 minutes)
+- [USER_GUIDE.md](../docs/USER_GUIDE.md) - Complete workflow guide
+- [README.md](../docs/README.md) - Project overview
+- [lib/README.md](../lib/README.md) - Module documentation

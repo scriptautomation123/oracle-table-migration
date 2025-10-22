@@ -18,18 +18,20 @@ echo ""
 
 # Function to print section headers
 print_header() {
-    echo -e "\n${GREEN}=== $1 ===${NC}\n"
+	echo -e "\n${GREEN}=== $1 ===${NC}\n"
 }
 
 # Function to check if Oracle is running
 check_oracle() {
-    if docker ps | grep -q oracle-test-db; then
-        echo -e "${GREEN}✓ Oracle container is running${NC}"
-        return 0
-    else
-        echo -e "${RED}✗ Oracle container is not running${NC}"
-        return 1
-    fi
+	local docker_output
+	docker_output=$(docker ps)
+	if echo "${docker_output}" | grep -q oracle-test-db; then
+		echo -e "${GREEN}✓ Oracle container is running${NC}"
+		return 0
+	else
+		echo -e "${RED}✗ Oracle container is not running${NC}"
+		return 1
+	fi
 }
 
 # System Resources
@@ -39,32 +41,36 @@ nproc
 echo ""
 
 echo -e "${YELLOW}Memory (GB):${NC}"
-free -h | awk 'NR==2{printf "Total: %s\nUsed: %s (%.2f%%)\nFree: %s\n", $2,$3,$3*100/$2,$4}'
+free -h | awk 'NR==2{printf "Total: %s\nUsed: %s (%.2f%%)\nFree: %s\n", $2,$3,$3*100/$2,$4}' || true
 echo ""
 
 echo -e "${YELLOW}Disk Space:${NC}"
-df -h / | awk 'NR==2{printf "Total: %s\nUsed: %s (%s)\nAvailable: %s\n", $2,$3,$5,$4}'
+df -h / | awk 'NR==2{printf "Total: %s\nUsed: %s (%s)\nAvailable: %s\n", $2,$3,$5,$4}' || true
 echo ""
 
 # Docker Container Resources
 print_header "Docker Container Resources"
-if check_oracle; then
-    echo -e "${YELLOW}Container Statistics (5 second sample):${NC}"
-    docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}" oracle-test-db workspace
-    echo ""
+check_oracle
+oracle_running=$?
+if [[ ${oracle_running} -eq 0 ]]; then
+	echo -e "${YELLOW}Container Statistics (5 second sample):${NC}"
+	docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}" oracle-test-db workspace
+	echo ""
 fi
 
 # Oracle Database Status
-if check_oracle; then
-    print_header "Oracle Database Status"
-    
-    # Check if database is ready
-    if docker exec oracle-test-db healthcheck.sh > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ Oracle database is healthy${NC}"
-        
-        # Get database info
-        echo -e "\n${YELLOW}Database Information:${NC}"
-        docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
+check_oracle
+oracle_running=$?
+if [[ ${oracle_running} -eq 0 ]]; then
+	print_header "Oracle Database Status"
+
+	# Check if database is ready
+	if docker exec oracle-test-db healthcheck.sh >/dev/null 2>&1; then
+		echo -e "${GREEN}✓ Oracle database is healthy${NC}"
+
+		# Get database info
+		echo -e "\n${YELLOW}Database Information:${NC}"
+		docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
 SET PAGESIZE 100
 SET LINESIZE 200
 SET FEEDBACK OFF
@@ -77,10 +83,10 @@ SELECT 'Current SCN: ' || current_scn FROM v\$database;
 
 EXIT;
 EOF
-        
-        # SGA and PGA Information
-        print_header "Memory Configuration (SGA/PGA)"
-        docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
+
+		# SGA and PGA Information
+		print_header "Memory Configuration (SGA/PGA)"
+		docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
 SET PAGESIZE 100
 SET LINESIZE 200
 
@@ -98,9 +104,9 @@ WHERE name = 'aggregate PGA target parameter';
 EXIT;
 EOF
 
-        # Active Sessions
-        print_header "Active Sessions"
-        docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
+		# Active Sessions
+		print_header "Active Sessions"
+		docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
 SET PAGESIZE 100
 SET LINESIZE 200
 
@@ -131,9 +137,9 @@ FETCH FIRST 10 ROWS ONLY;
 EXIT;
 EOF
 
-        # Tablespace Usage
-        print_header "Tablespace Usage"
-        docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
+		# Tablespace Usage
+		print_header "Tablespace Usage"
+		docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
 SET PAGESIZE 100
 SET LINESIZE 200
 
@@ -153,9 +159,9 @@ ORDER BY used_percent DESC;
 EXIT;
 EOF
 
-        # Top SQL by Elapsed Time
-        print_header "Top SQL Statements (by Elapsed Time)"
-        docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
+		# Top SQL by Elapsed Time
+		print_header "Top SQL Statements (by Elapsed Time)"
+		docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
 SET PAGESIZE 100
 SET LINESIZE 200
 
@@ -179,9 +185,9 @@ FETCH FIRST 10 ROWS ONLY;
 EXIT;
 EOF
 
-        # Wait Events
-        print_header "Top Wait Events (excluding Idle)"
-        docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
+		# Wait Events
+		print_header "Top Wait Events (excluding Idle)"
+		docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<EOF
 SET PAGESIZE 100
 SET LINESIZE 200
 
@@ -203,9 +209,9 @@ FETCH FIRST 10 ROWS ONLY;
 EXIT;
 EOF
 
-        # Partition Information (if HR schema has partitioned tables)
-        print_header "Partition Information"
-        docker exec oracle-test-db sqlplus -s hr/hr123@XEPDB1 <<EOF
+		# Partition Information (if HR schema has partitioned tables)
+		print_header "Partition Information"
+		docker exec oracle-test-db sqlplus -s hr/hr123@XEPDB1 <<EOF
 SET PAGESIZE 100
 SET LINESIZE 200
 
@@ -226,12 +232,12 @@ ORDER BY partition_count DESC;
 EXIT;
 EOF
 
-    else
-        echo -e "${YELLOW}⚠ Oracle database is starting up...${NC}"
-    fi
+	else
+		echo -e "${YELLOW}⚠ Oracle database is starting up...${NC}"
+	fi
 else
-    echo -e "${RED}Oracle container is not running. Start it with:${NC}"
-    echo -e "${YELLOW}docker compose -f .devcontainer/docker-compose.yml up -d${NC}"
+	echo -e "${RED}Oracle container is not running. Start it with:${NC}"
+	echo -e "${YELLOW}docker compose -f .devcontainer/docker-compose.yml up -d${NC}"
 fi
 
 # Performance Recommendations

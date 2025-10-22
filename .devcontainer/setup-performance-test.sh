@@ -11,9 +11,9 @@ echo ""
 
 # Wait for Oracle to be ready
 echo "Waiting for Oracle database to be ready..."
-while ! docker exec oracle-test-db healthcheck.sh > /dev/null 2>&1; do
-    echo -n "."
-    sleep 2
+while ! docker exec oracle-test-db healthcheck.sh >/dev/null 2>&1; do
+	echo -n "."
+	sleep 2
 done
 echo ""
 echo "✓ Oracle database is ready!"

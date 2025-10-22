@@ -1,4 +1,4 @@
-table_migration/                           # Standalone project root
+oracle-table-migration/                    # Standalone project root
 │
 ├── generate_scripts.py                    # Main CLI tool (981 lines)
 │
@@ -23,16 +23,13 @@ table_migration/                           # Standalone project root
 │   ├── master1.sql.j2                    # Orchestration (phase 1)
 │   └── master2.sql.j2                    # Orchestration (phase 2)
 │
-├── examples/                              # Learning resources (committed to git)
+├── examples/                              # Learning resources
 │   ├── README.md
 │   ├── configs/                           # Sample JSON configurations
 │   │   ├── config_interval_to_interval_hash.json
 │   │   └── config_nonpartitioned_to_interval_hash.json
-│   └── generated/                         # Example migration outputs
-│       ├── MYSCHEMA_IE_PC_OFFER_IN/
-│       │   └── README.md
-│       └── MYSCHEMA_IE_PC_SEQ_OUT/
-│           └── README.md
+│   └── generated/                         # Placeholder (gitignored except README)
+│       └── README.md
 │
 ├── output/                                # User's generated scripts (gitignored)
 │   └── (generated migration folders)
@@ -41,15 +38,26 @@ table_migration/                           # Standalone project root
 │   ├── README.md
 │   └── emergency_rollback.sql
 │
+├── docs/                                  # Documentation
+│   ├── README.md                          # Project overview
+│   ├── USER_GUIDE.md                      # Complete workflow guide (810 lines)
+│   ├── IMPLEMENTATION_PLAN.md             # Architecture documentation
+│   └── STRUCTURE.txt                      # This file
+│
 ├── .devcontainer/                         # GitHub Codespaces config
-│   └── README.md
+│   ├── README.md                          # Codespaces documentation
+│   ├── devcontainer.json                  # Container configuration
+│   ├── Dockerfile                         # Custom image
+│   ├── docker-compose.yml                 # Oracle + workspace services
+│   ├── setup.sh                           # Post-create setup
+│   ├── setup-performance-test.sh          # Performance tuning
+│   ├── monitor-performance.sh             # Performance monitoring
+│   └── init-scripts/                      # Oracle initialization
 │
 ├── .gitignore                             # Ignore output/, *.pyc, etc.
 ├── requirements.txt                       # Python dependencies
-├── README.md                              # Project README (quick start)
-├── USER_GUIDE.md                          # Complete workflow guide (810 lines)
-├── IMPLEMENTATION_PLAN.md                 # Architecture documentation
-└── STRUCTURE.txt                          # This file
+├── QUICKSTART.md                          # Quick start guide (5 minutes)
+└── README.md                              # Project landing page
 
 ════════════════════════════════════════════════════════════════════════════════
 

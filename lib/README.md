@@ -54,7 +54,7 @@ JSON configuration validation with JSON Schema.
 
 ### migration_validator.py
 
-### migration_validator.pyPre-migration and post-migration validation framework.
+### migration_validator.pyPre-migration and post-migration validation framework
 
 Pre-migration and post-migration validation framework.
 

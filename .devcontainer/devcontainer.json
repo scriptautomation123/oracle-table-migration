@@ -3,10 +3,10 @@
   "dockerComposeFile": "docker-compose.yml",
   "service": "workspace",
   "workspaceFolder": "/workspace",
-  
+
   // Optimized for large Codespace machines (32-core recommended for performance testing)
   // Will work on any machine size - select 32-core manually during creation for best performance
-  
+
   "features": {
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.11"
@@ -18,7 +18,7 @@
       "dockerDashComposeVersion": "v2"
     }
   },
-  
+
   "customizations": {
     "vscode": {
       "extensions": [
@@ -64,16 +64,12 @@
       }
     },
     "codespaces": {
-      "openFiles": [
-        "README.md",
-        "USER_GUIDE.md",
-        ".devcontainer/README.md"
-      ]
+      "openFiles": ["README.md", "USER_GUIDE.md", ".devcontainer/README.md"]
     }
   },
-  
+
   "postCreateCommand": "bash .devcontainer/setup.sh",
-  
+
   "forwardPorts": [1521, 5500],
   "portsAttributes": {
     "1521": {
@@ -85,6 +81,6 @@
       "onAutoForward": "silent"
     }
   },
-  
+
   "remoteUser": "vscode"
 }

@@ -19,7 +19,6 @@ This framework provides a **JSON-driven, automated approach** to migrating Oracl
 pip install --user oracledb jinja2 jsonschema
 
 # 2. Discover your schema
-cd table_migration/generator
 python3 generate_scripts.py --discover --schema MYSCHEMA \
     --connection "user/password@host:1521/service"
 
@@ -33,7 +32,7 @@ python3 generate_scripts.py --config migration_config.json --validate-only
 python3 generate_scripts.py --config migration_config.json
 
 # 6. Execute scripts
-cd ../generated_scripts/MYSCHEMA_TABLENAME
+cd output/MYSCHEMA_TABLENAME
 sqlplus user/password@host:1521/service @master1.sql
 ```
 
@@ -46,8 +45,6 @@ sqlplus user/password@host:1521/service @master1.sql
 **Purpose**: Analyze your schema and generate a JSON configuration file.
 
 ```bash
-cd table_migration/generator
-
 # Discover all tables in schema
 python3 generate_scripts.py --discover --schema HR \
     --connection "hr/hr123@localhost:1521/XEPDB1"
@@ -233,8 +230,8 @@ python3 generate_scripts.py --config migration_config.json \
 ```
 
 **Generated Structure**:
-```
-generated_scripts/
+```bash
+output/
 └── HR_EMPLOYEES/
     ├── 10_create_table.sql      # Create new partitioned table
     ├── 20_data_load.sql          # Initial data load
@@ -255,7 +252,7 @@ generated_scripts/
 #### Step 1: Review Generated Scripts
 
 ```bash
-cd ../generated_scripts/HR_EMPLOYEES
+cd output/HR_EMPLOYEES
 cat README.md          # Review migration plan
 cat 10_create_table.sql # Review CREATE TABLE statement
 ```
@@ -278,7 +275,7 @@ sqlplus hr/hr123@localhost:1521/XEPDB1 @master1.sql
 #### Step 3: Validate Post-Migration
 
 ```bash
-cd ../../02_generator
+cd ../..
 python3 generate_scripts.py --config migration_config.json --validate-post \
     --connection "hr/hr123@localhost:1521/XEPDB1"
 ```
@@ -309,7 +306,7 @@ python3 generate_scripts.py --config migration_config.json --compare-data \
 **IMPORTANT**: This is the downtime window. Applications should be stopped.
 
 ```bash
-cd ../generated_scripts/HR_EMPLOYEES
+cd output/HR_EMPLOYEES
 sqlplus hr/hr123@localhost:1521/XEPDB1 @master2.sql
 ```
 
@@ -324,7 +321,7 @@ sqlplus hr/hr123@localhost:1521/XEPDB1 @master2.sql
 #### Step 6: Generate Validation Report
 
 ```bash
-cd ../../02_generator
+cd ../..
 python3 generate_scripts.py --config migration_config.json \
     --validation-report migration_report.md \
     --connection "hr/hr123@localhost:1521/XEPDB1"
@@ -476,16 +473,16 @@ SUBPARTITION BY HASH (USER_ID) SUBPARTITIONS 32
 You can customize Jinja2 templates in `templates/`:
 
 ```bash
-cd table_migration/01_templates
+cd templates
 
 # Copy template
 cp 10_create_table.sql.j2 10_create_table.sql.j2.custom
 
 # Edit template
-vim 10_create_table.sql.j2
+vim 10_create_table.sql.j2.custom
 
 # Use custom template directory
-
+cd ..
 python3 generate_scripts.py --config migration_config.json \
     --template-dir /path/to/custom/templates
 ```
@@ -512,7 +509,7 @@ PARALLEL 8 NOLOGGING;
 If migration fails, use scripts in `rollback/`:
 
 ```bash
-cd table_migration/04_rollback
+cd rollback
 
 # Emergency rollback (restores original table)
 sqlplus hr/hr123@localhost:1521/XEPDB1 @emergency_rollback.sql
@@ -613,7 +610,7 @@ ALTER SYSTEM KILL SESSION 'sid,serial#';
 
 **Solution**: Re-run delta load:
 ```bash
-cd ../generated_scripts/HR_EMPLOYEES
+cd output/HR_EMPLOYEES
 sqlplus hr/hr123@localhost:1521/XEPDB1 @40_delta_load.sql
 ```
 
@@ -787,9 +784,6 @@ A: Framework detects dependencies in pre-migration validation. Disable FKs befor
 
 **Q: Can I use this for Oracle 11g?**  
 A: No, requires Oracle 12c+ for INTERVAL partitioning. 11g doesn't support it.
-
-**Q: What about Oracle Autonomous Database?**  
-A: Yes, fully supported. Use wallet-based connection strings.
 
 ---
 
