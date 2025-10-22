@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/base:ubuntu
+FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 
 # Install Oracle Instant Client and tools
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
@@ -6,13 +6,15 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
         python3-pip \
         python3-dev \
         build-essential \
-        libaio1 \
+        libaio1t64 \
         wget \
         unzip \
         curl \
         vim \
         less \
-        git
+        git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Oracle Instant Client 21
 RUN mkdir -p /opt/oracle \
