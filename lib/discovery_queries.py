@@ -536,10 +536,20 @@ class TableDiscovery:
 
         lob_details = []
         for row in cursor.fetchall():
+            # Extract base tablespace name (remove _01, _02, etc. suffixes if present)
+            tablespace_name = row[2]
+            base_tablespace = tablespace_name
+            if tablespace_name and '_' in tablespace_name:
+                # Check if it ends with _\d\d pattern
+                parts = tablespace_name.rsplit('_', 1)
+                if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) == 2:
+                    base_tablespace = parts[0]
+            
             lob_details.append({
                 "column_name": row[0],
                 "segment_name": row[1],
-                "tablespace_name": row[2],
+                "tablespace_name": base_tablespace,  # Use base tablespace name
+                "original_tablespace": row[2],  # Keep original for reference
                 "securefile": row[3],
                 "compression": row[4],
                 "deduplication": row[5],
@@ -667,9 +677,10 @@ class TableDiscovery:
                     if locality_row:
                         index_info["locality"] = locality_row[0]
                     locality_cursor.close()
-                except Exception:
+                except Exception as e:
                     # If ALL_PART_INDEXES is not accessible, skip locality
-                    pass
+                    import logging
+                    logging.warning(f"Could not fetch locality for index {idx_name}: {e}")
             
             indexes.append(index_info)
 

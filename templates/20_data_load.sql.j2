@@ -185,136 +185,15 @@ COMMIT;
 PROMPT
 PROMPT ✓ Data load completed and committed
 
--- Verify row count match
-PROMPT
-PROMPT ================================================================
-PROMPT Verifying Data Load...
-PROMPT ================================================================
 
-DECLARE
-    v_duration_minutes NUMBER;
-    v_duration_hours NUMBER;
-    v_rows_per_sec NUMBER;
-    v_mb_per_sec NUMBER;
-    v_table_size_mb NUMBER;
-BEGIN
-    -- Get target count
-    SELECT COUNT(*) INTO :v_target_count FROM {{ owner }}.{{ new_table_name }};
-    
-    -- Calculate duration
-    SELECT ROUND((TO_DATE(:v_end_time, 'YYYY-MM-DD HH24:MI:SS') - 
-                  TO_DATE(:v_start_time, 'YYYY-MM-DD HH24:MI:SS')) * 24 * 60, 2)
-    INTO v_duration_minutes FROM dual;
-    
-    v_duration_hours := ROUND(v_duration_minutes / 60, 2);
-    
-    -- Calculate throughput
-    IF v_duration_minutes > 0 THEN
-        v_rows_per_sec := ROUND(:v_target_count / (v_duration_minutes * 60), 0);
-        v_table_size_mb := {{ current_state.size_gb }} * 1024;
-        v_mb_per_sec := ROUND(v_table_size_mb / (v_duration_minutes * 60), 2);
-    ELSE
-        v_rows_per_sec := 0;
-        v_mb_per_sec := 0;
-    END IF;
-    
-    -- Display results
-    DBMS_OUTPUT.PUT_LINE('');
-    DBMS_OUTPUT.PUT_LINE('Data Load Summary:');
-    DBMS_OUTPUT.PUT_LINE('==================');
-    DBMS_OUTPUT.PUT_LINE('Source Rows:        ' || TO_CHAR(:v_source_count, '999,999,999,999'));
-    DBMS_OUTPUT.PUT_LINE('Target Rows:        ' || TO_CHAR(:v_target_count, '999,999,999,999'));
-    DBMS_OUTPUT.PUT_LINE('Difference:         ' || TO_CHAR(:v_source_count - :v_target_count, '999,999,999,999'));
-    DBMS_OUTPUT.PUT_LINE('');
-    DBMS_OUTPUT.PUT_LINE('Timing:');
-    DBMS_OUTPUT.PUT_LINE('-------');
-    DBMS_OUTPUT.PUT_LINE('Start Time:         ' || :v_start_time);
-    DBMS_OUTPUT.PUT_LINE('End Time:           ' || :v_end_time);
-    DBMS_OUTPUT.PUT_LINE('Duration:           ' || v_duration_minutes || ' minutes (' || v_duration_hours || ' hours)');
-    DBMS_OUTPUT.PUT_LINE('');
-    DBMS_OUTPUT.PUT_LINE('Throughput:');
-    DBMS_OUTPUT.PUT_LINE('-----------');
-    DBMS_OUTPUT.PUT_LINE('Rows/Second:        ' || TO_CHAR(v_rows_per_sec, '999,999,999'));
-    DBMS_OUTPUT.PUT_LINE('MB/Second:          ' || TO_CHAR(v_mb_per_sec, '999,999.99'));
-    DBMS_OUTPUT.PUT_LINE('Parallel Degree:    {{ target_configuration.parallel_degree }}');
-    DBMS_OUTPUT.PUT_LINE('');
-    
-    -- Validation
-    IF :v_source_count = :v_target_count THEN
-        DBMS_OUTPUT.PUT_LINE('✓✓✓ Row count MATCH - Data load SUCCESSFUL! ✓✓✓');
-    ELSIF :v_target_count > :v_source_count THEN
-        DBMS_OUTPUT.PUT_LINE('✗✗✗ ERROR: Target has MORE rows than source! ✗✗✗');
-        RAISE_APPLICATION_ERROR(-20002, 'Target row count exceeds source');
-    ELSE
-        DBMS_OUTPUT.PUT_LINE('✗✗✗ WARNING: Row count MISMATCH - ' || 
-            TO_CHAR(:v_source_count - :v_target_count) || ' rows missing! ✗✗✗');
-        RAISE_APPLICATION_ERROR(-20001, 'Row count mismatch detected');
-    END IF;
-    DBMS_OUTPUT.PUT_LINE('');
-END;
-/
-
--- Gather statistics on loaded table
-PROMPT
-PROMPT Gathering statistics on target table...
-PROMPT (This may take several minutes for large tables)
-
-DECLARE
-    v_stats_start TIMESTAMP := SYSTIMESTAMP;
-    v_stats_end TIMESTAMP;
-    v_stats_duration NUMBER;
-BEGIN
-    DBMS_STATS.GATHER_TABLE_STATS(
-        ownname => '{{ owner }}',
-        tabname => '{{ new_table_name }}',
-        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
-        method_opt => 'FOR ALL COLUMNS SIZE AUTO',
-        degree => {{ target_configuration.parallel_degree }},
-        cascade => FALSE,
-        granularity => 'AUTO',  -- Partition and global stats
-        no_invalidate => FALSE
-    );
-    
-    v_stats_end := SYSTIMESTAMP;
-    v_stats_duration := EXTRACT(SECOND FROM (v_stats_end - v_stats_start));
-    
-    DBMS_OUTPUT.PUT_LINE('✓ Statistics gathered successfully');
-    DBMS_OUTPUT.PUT_LINE('  Duration: ' || ROUND(v_stats_duration, 2) || ' seconds');
-EXCEPTION
-    WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('WARNING: Statistics gathering failed: ' || SQLERRM);
-        DBMS_OUTPUT.PUT_LINE('         You may need to gather stats manually later');
-END;
-/
+-- Post-data load validation and statistics
+@validation/post_data_load_checks.sql {{ owner }} {{ new_table_name }} {{ table_name }} {{ current_state.row_count }} {{ target_configuration.parallel_degree }}
 
 {%- if target_configuration.partition_type in ['INTERVAL', 'RANGE'] %}
 
--- Display partition distribution
-PROMPT
-PROMPT ================================================================
-PROMPT Partition Distribution Summary
-PROMPT ================================================================
 
-SELECT 
-    partition_name,
-    {% if target_configuration.subpartition_type == 'HASH' -%}
-    subpartition_count,
-    {%- endif %}
-    num_rows,
-    blocks,
-    ROUND(num_rows * 100.0 / NULLIF(SUM(num_rows) OVER (), 0), 2) AS pct_of_total,
-    high_value
-FROM 
-    all_tab_partitions
-WHERE 
-    table_owner = '{{ owner }}'
-    AND table_name = '{{ new_table_name }}'
-ORDER BY 
-    partition_position DESC
-FETCH FIRST 10 ROWS ONLY;
-
-PROMPT
-PROMPT (Showing last 10 partitions - newest first)
+-- Partition distribution summary (generic)
+@validation/partition_distribution_summary.sql {{ owner }} {{ new_table_name }} {{ target_configuration.subpartition_type }}
 
 {%- endif %}
 

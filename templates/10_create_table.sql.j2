@@ -67,27 +67,8 @@ PROMPT LOB Columns: {{ current_state.lob_count }}
 {%- endif %}
 PROMPT ================================================================
 
--- Check if table already exists
-DECLARE
-    v_count NUMBER;
-BEGIN
-    SELECT COUNT(*) INTO v_count
-    FROM all_tables
-    WHERE owner = '{{ owner }}'
-      AND table_name = '{{ new_table_name }}';
-    
-    IF v_count > 0 THEN
-        DBMS_OUTPUT.PUT_LINE('WARNING: Table {{ owner }}.{{ new_table_name }} already exists!');
-        DBMS_OUTPUT.PUT_LINE('');
-        DBMS_OUTPUT.PUT_LINE('To drop the existing table manually, run:');
-        DBMS_OUTPUT.PUT_LINE('  DROP TABLE {{ owner }}.{{ new_table_name }} PURGE;');
-        DBMS_OUTPUT.PUT_LINE('');
-        RAISE_APPLICATION_ERROR(-20001, 'Table {{ owner }}.{{ new_table_name }} already exists. Drop it manually before proceeding.');
-    ELSE
-        DBMS_OUTPUT.PUT_LINE('✓ Table {{ owner }}.{{ new_table_name }} does not exist - proceeding with creation');
-    END IF;
-END;
-/
+-- Check if table already exists (generic)
+@validation/check_table_exists.sql {{ owner }} {{ new_table_name }}
 
 -- Create new table with partitioning
 PROMPT
@@ -111,9 +92,11 @@ INITRANS {{ storage_parameters.ini_trans }}
 {%- if storage_parameters and storage_parameters.max_trans %}
 MAXTRANS {{ storage_parameters.max_trans }}
 {%- endif %}
-{%- if storage_parameters and storage_parameters.initial_extent %}
+{%- if storage_parameters and (storage_parameters.initial_extent or storage_parameters.next_extent or storage_parameters.buffer_pool) %}
 STORAGE (
+{%- if storage_parameters.initial_extent %}
     INITIAL {{ storage_parameters.initial_extent }}
+{%- endif %}
 {%- if storage_parameters.next_extent %}
     NEXT {{ storage_parameters.next_extent }}
 {%- endif %}
@@ -122,34 +105,6 @@ STORAGE (
 {%- endif %}
 )
 {%- endif %}
-{%- if lob_storage and lob_storage | length > 0 %}
-{%- for lob in lob_storage %}
-LOB ({{ lob.column_name }}) STORE AS {%- if lob.securefile == 'YES' %} SECUREFILE{%- else %} BASICFILE{%- endif %} {{ lob.segment_name }} (
-    TABLESPACE {{ lob.tablespace_name | default(target_configuration.tablespace) }}
-{%- if lob.in_row %}
-    {%- if lob.in_row == 'YES' %}
-    ENABLE STORAGE IN ROW
-    {%- else %}
-    DISABLE STORAGE IN ROW
-    {%- endif %}
-{%- endif %}
-{%- if lob.chunk %}
-    CHUNK {{ lob.chunk }}
-{%- endif %}
-{%- if lob.cache %}
-    {%- if lob.cache == 'YES' %}CACHE{%- else %}NOCACHE{%- endif %}
-{%- endif %}
-{%- if lob.securefile == 'YES' %}
-    {%- if lob.compression %}
-    {%- if lob.compression == 'ENABLED' %}COMPRESS{%- else %}NOCOMPRESS{%- endif %}
-    {%- endif %}
-    {%- if lob.deduplication %}
-    {%- if lob.deduplication == 'ENABLED' %}DEDUPLICATE{%- else %}KEEP_DUPLICATES{%- endif %}
-    {%- endif %}
-{%- endif %}
-)
-{%- endfor %}
-{%- endif %}
 {%- if target_configuration.partition_type == 'INTERVAL' %}
 PARTITION BY RANGE ({{ target_configuration.partition_column }})
 {%- if target_configuration.interval_type %}
@@ -157,186 +112,54 @@ INTERVAL ({{ target_configuration.interval_type | format_interval(target_configu
 {%- endif %}
 {%- if target_configuration.subpartition_type == 'HASH' %}
 SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
+{%- if lob_storage and lob_storage | length > 0 %}
+SUBPARTITION TEMPLATE
+(
+{%- for i in range(target_configuration.subpartition_count) %}
+    SUBPARTITION sp{{ i }}
+{%- if lob_storage and lob_storage | length > 0 %}
+        {% for lob in lob_storage %}LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
+        {% endfor %}
+{%- endif %}{{ ',' if not loop.last else '' }}
+{%- endfor %}
+)
+{%- else %}
 SUBPARTITIONS {{ target_configuration.subpartition_count }}
-{%- if not is_power_of_2(target_configuration.subpartition_count) %}
--- WARNING: Subpartition count ({{ target_configuration.subpartition_count }}) is not a power of 2
--- Recommended values: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024
 {%- endif %}
 {%- endif %}
 (
-    PARTITION p_initial VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
+    PARTITION p_seed VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
 )
 {%- elif target_configuration.partition_type == 'RANGE' %}
--- RANGE partitioning (without INTERVAL)
 PARTITION BY RANGE ({{ target_configuration.partition_column }})
 {%- if target_configuration.subpartition_type == 'HASH' %}
 SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
+{%- if lob_storage and lob_storage | length > 0 %}
+SUBPARTITION TEMPLATE
+(
+{%- for i in range(target_configuration.subpartition_count) %}
+    SUBPARTITION sp{{ i }}
+{%- if lob_storage and lob_storage | length > 0 %}
+        {% for lob in lob_storage %}LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
+        {% endfor %}
+{%- endif %}{{ ',' if not loop.last else '' }}
+{%- endfor %}
+)
+{%- else %}
 SUBPARTITIONS {{ target_configuration.subpartition_count }}
 {%- endif %}
+{%- endif %}
 (
-    PARTITION p_initial VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
+    PARTITION p_seed VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
 )
 {%- endif %}
-ENABLE ROW MOVEMENT
-{%- if target_configuration.parallel_degree > 1 %}
-PARALLEL {{ target_configuration.parallel_degree }}
-{%- else %}
-NOPARALLEL
-{%- endif %};
+ENABLE ROW MOVEMENT;
 
 PROMPT ✓ Table {{ owner }}.{{ new_table_name }} created successfully
 
--- Verify table creation
-PROMPT
-PROMPT Verifying table structure...
 
-SELECT 
-    table_name,
-    tablespace_name,
-    partitioned,
-    status,
-    num_rows,
-    blocks
-FROM 
-    all_tables
-WHERE 
-    owner = '{{ owner }}'
-    AND table_name = '{{ new_table_name }}';
-
-{%- if target_configuration.partition_type in ['INTERVAL', 'RANGE'] %}
-
--- Verify partitioning configuration
-PROMPT
-PROMPT Verifying partitioning configuration...
-
-SELECT 
-    table_name,
-    partitioning_type,
-    subpartitioning_type,
-    partition_count,
-    def_subpartition_count,
-    interval,
-    CASE WHEN interval IS NOT NULL THEN 'YES' ELSE 'NO' END as is_interval
-FROM 
-    all_part_tables
-WHERE 
-    owner = '{{ owner }}'
-    AND table_name = '{{ new_table_name }}';
-
--- Show partition key columns
-PROMPT
-PROMPT Partition key columns:
-
-SELECT 
-    column_name,
-    column_position,
-    object_type
-FROM 
-    all_part_key_columns
-WHERE 
-    owner = '{{ owner }}'
-    AND name = '{{ new_table_name }}'
-ORDER BY 
-    column_position;
-
-{%- endif %}
-
-{%- if current_state.lob_count > 0 %}
-
--- Verify LOB columns configuration
-PROMPT
-PROMPT Verifying LOB column configuration...
-
-SELECT 
-    column_name,
-    segment_name,
-    tablespace_name,
-    securefile,
-    compression,
-    deduplication,
-    in_row,
-    chunk,
-    cache
-FROM 
-    all_lobs
-WHERE 
-    owner = '{{ owner }}'
-    AND table_name = '{{ new_table_name }}'
-ORDER BY 
-    column_name;
-
-{%- endif %}
-
--- Gather initial statistics
-PROMPT
-PROMPT Gathering initial statistics...
-
-DECLARE
-    v_start_time TIMESTAMP := SYSTIMESTAMP;
-    v_end_time TIMESTAMP;
-    v_duration INTERVAL DAY TO SECOND;
-BEGIN
-    DBMS_STATS.GATHER_TABLE_STATS(
-        ownname => '{{ owner }}',
-        tabname => '{{ new_table_name }}',
-        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
-        method_opt => 'FOR ALL COLUMNS SIZE AUTO',
-        degree => {{ target_configuration.parallel_degree }},
-        cascade => FALSE
-    );
-    
-    v_end_time := SYSTIMESTAMP;
-    v_duration := v_end_time - v_start_time;
-    
-    DBMS_OUTPUT.PUT_LINE('✓ Statistics gathered successfully');
-    DBMS_OUTPUT.PUT_LINE('  Duration: ' || TO_CHAR(EXTRACT(SECOND FROM v_duration), '999.99') || ' seconds');
-END;
-/
-
--- Display table info
-PROMPT
-PROMPT Table Information:
-PROMPT ==================
-
-DECLARE
-    v_table_exists NUMBER;
-    v_partitioned VARCHAR2(3);
-    v_part_type VARCHAR2(30);
-    v_subpart_type VARCHAR2(30);
-    v_interval VARCHAR2(1000);
-BEGIN
-    SELECT COUNT(*) INTO v_table_exists
-    FROM all_tables
-    WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
-    
-    IF v_table_exists = 0 THEN
-        DBMS_OUTPUT.PUT_LINE('ERROR: Table was not created successfully!');
-        RAISE_APPLICATION_ERROR(-20001, 'Table creation failed');
-    END IF;
-    
-    SELECT partitioned INTO v_partitioned
-    FROM all_tables
-    WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
-    
-    DBMS_OUTPUT.PUT_LINE('Table Name: {{ owner }}.{{ new_table_name }}');
-    DBMS_OUTPUT.PUT_LINE('Tablespace: {{ target_configuration.tablespace }}');
-    DBMS_OUTPUT.PUT_LINE('Partitioned: ' || v_partitioned);
-    
-    IF v_partitioned = 'YES' THEN
-        SELECT partitioning_type, subpartitioning_type, NVL(interval, 'N/A')
-        INTO v_part_type, v_subpart_type, v_interval
-        FROM all_part_tables
-        WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
-        
-        DBMS_OUTPUT.PUT_LINE('Partition Type: ' || v_part_type);
-        DBMS_OUTPUT.PUT_LINE('Subpartition Type: ' || NVL(v_subpart_type, 'NONE'));
-        DBMS_OUTPUT.PUT_LINE('Interval: ' || v_interval);
-    END IF;
-    
-    DBMS_OUTPUT.PUT_LINE('');
-    DBMS_OUTPUT.PUT_LINE('✓ Table created and verified successfully!');
-END;
-/
+-- Post-create table checks (structure, partitioning, LOBs, stats)
+@validation/post_create_table_checks.sql {{ owner }} {{ new_table_name }} {{ target_configuration.parallel_degree }}
 
 PROMPT
 PROMPT ================================================================
