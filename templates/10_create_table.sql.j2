@@ -72,9 +72,9 @@ PROMPT Estimated time: {{ current_state.size_gb | estimate_time('load') }}
 
 CREATE TABLE "{{ owner }}"."{{ new_table_name }}"
 (
-{% for line in column_definitions.split('\n') %}
-    {{ line }}
-{% endfor %}
+{%- for col in columns %}
+    {{ col.name }} {{ col.type }}{% if col.type in ['VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR'] and col.char_length %}({{ col.char_length }}){% elif col.type == 'NUMBER' and col.precision %}({{ col.precision }}{% if col.scale is not none %},{{ col.scale }}{% endif %}){% endif %}{% if col.default %} DEFAULT {{ col.default }}{% endif %}{% if col.nullable == 'N' %} NOT NULL{% endif %}{% if not loop.last %},{% endif %}
+{%- endfor %}
 )
 {%- if storage_parameters and storage_parameters.compression and storage_parameters.compression != 'DISABLED' %}
 COMPRESS FOR {{ storage_parameters.compress_for | default('OLTP') }}
@@ -93,18 +93,18 @@ STORAGE (
 
 {%- if target_configuration.partition_type == 'INTERVAL' or target_configuration.partition_type == 'RANGE' %}
 PARTITION BY RANGE ({{ target_configuration.partition_column }})
-    INTERVAL ({{ target_configuration.interval_type | format_interval(target_configuration.interval_value) }})
+INTERVAL ({{ target_configuration.interval_type | format_interval(target_configuration.interval_value) }})
     {%- if target_configuration.subpartition_type == 'HASH' %}
-    SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
+SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
         {%- if lob_storage and lob_storage | length > 0 %}
-        SUBPARTITION TEMPLATE
-        (
+SUBPARTITION TEMPLATE
+(
 {% for i in range(4) %}
-            SUBPARTITION sp{{ i }}
+    SUBPARTITION sp{{ i }}
 {% for lob in lob_storage %}
-                LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
+        LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
 {% endfor %}
-{% if not loop.last %}            ,{% endif %}
+{% if not loop.last %} ,{% endif %}
 {% endfor %}
         )
         {%- else %}
