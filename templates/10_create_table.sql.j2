@@ -102,7 +102,7 @@ SUBPARTITION TEMPLATE
 {%- for i in range(4) %}
     SUBPARTITION sp{{ i }}
 {%- for lob in lob_storage %}
-        LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){% if not loop.last %},{% endif %}
+        LOB ({{ lob.column_name }}) STORE AS {{ lob.column_name.lower() }}_lob_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){% if not loop.last %},{% endif %}
 {%- endfor %}
 {%- if not loop.last %},{% endif %}
 {%- endfor %}
