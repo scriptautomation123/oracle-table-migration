@@ -1,15 +1,27 @@
 {
-  "name": "OCI Free Tier DB + Oracle Test Environment",
+  "name": "Oracle Table Migration - Performance Testing Environment",
   "dockerComposeFile": "docker-compose.yml",
   "service": "workspace",
   "workspaceFolder": "/workspace",
+  
+  // Request largest Codespace machine for Oracle performance testing
+  // 32-core, 64GB RAM, 128GB storage
+  "hostRequirements": {
+    "cpus": 32,
+    "memory": "64gb",
+    "storage": "128gb"
+  },
   
   "features": {
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.11"
     },
     "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "dockerDashComposeVersion": "v2"
+    }
   },
   
   "customizations": {
@@ -17,11 +29,16 @@
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
         "Oracle.oracledevtools",
         "mtxr.sqltools",
         "mtxr.sqltools-driver-oracle",
         "wholroyd.jinja",
-        "redhat.vscode-yaml"
+        "redhat.vscode-yaml",
+        "humao.rest-client",
+        "rangav.vscode-thunder-client",
+        "ms-vscode.makefile-tools",
+        "eamodio.gitlens"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
@@ -29,10 +46,34 @@
         "python.linting.pylintEnabled": true,
         "python.formatting.provider": "black",
         "editor.formatOnSave": true,
+        "editor.rulers": [88, 120],
         "files.associations": {
-          "*.sql.j2": "jinja-sql"
+          "*.sql.j2": "jinja-sql",
+          "*.sql": "sql"
+        },
+        // Performance monitoring
+        "files.watcherExclude": {
+          "**/output/**": true,
+          "**/examples/generated/**": true,
+          "**/.git/objects/**": true,
+          "**/.git/subtree-cache/**": true,
+          "**/node_modules/**": true,
+          "**/__pycache__/**": true
+        },
+        // Oracle SQL formatting
+        "sqltools.useNodeRuntime": true,
+        "sqltools.format": {
+          "language": "sql",
+          "reservedWordCase": "upper"
         }
       }
+    },
+    "codespaces": {
+      "openFiles": [
+        "README.md",
+        "USER_GUIDE.md",
+        ".devcontainer/README.md"
+      ]
     }
   },
   

@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Oracle Database XE 21c
+  # Oracle Database XE 21c - Optimized for Performance Testing
   oracle:
     image: gvenzl/oracle-xe:21-slim-faststart
     container_name: oracle-test-db
@@ -15,6 +15,10 @@ services:
       
       # Create HR_APP schema via init script
       ORACLE_DATABASE: XEPDB1
+      
+      # Oracle Performance Tuning
+      ORACLE_CHARACTERSET: AL32UTF8
+      ENABLE_ARCHIVELOG: false
     
     ports:
       - "1521:1521"
@@ -31,12 +35,28 @@ services:
       retries: 10
       start_period: 90s
     
-    shm_size: 1gb
+    # Resource limits optimized for largest Codespace (32-core, 64GB RAM)
+    # Allocate significant resources to Oracle for performance testing
+    deploy:
+      resources:
+        limits:
+          cpus: '16'
+          memory: 32G
+        reservations:
+          cpus: '8'
+          memory: 16G
+    
+    # Shared memory for Oracle SGA - critical for performance
+    shm_size: 8gb
+    
+    # Use tmpfs for better I/O performance on temp data
+    tmpfs:
+      - /dev/shm:rw,noexec,nosuid,size=8g
     
     networks:
       - oracle-network
 
-  # Workspace container
+  # Workspace container - Optimized for development
   workspace:
     build:
       context: .
@@ -53,6 +73,16 @@ services:
       oracle:
         condition: service_healthy
     
+    # Resource allocation for workspace
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 16G
+        reservations:
+          cpus: '4'
+          memory: 8G
+    
     environment:
       ORACLE_HOST: oracle
       ORACLE_PORT: 1521
@@ -61,6 +91,14 @@ services:
       ORACLE_PASSWORD: hr123
       ORACLE_SYS_PASSWORD: Oracle123!
       TNS_ADMIN: /workspace/table_migration/wallets
+      
+      # Python optimization for performance
+      PYTHONUNBUFFERED: 1
+      PYTHONDONTWRITEBYTECODE: 1
+      
+      # Oracle client configuration
+      NLS_LANG: AMERICAN_AMERICA.AL32UTF8
+      ORA_SDTZ: UTC
     
     networks:
       - oracle-network
@@ -68,7 +106,13 @@ services:
 volumes:
   oracle-data:
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /tmp/oracle-data
 
 networks:
   oracle-network:
     driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1500

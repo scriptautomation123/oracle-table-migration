@@ -1,31 +1,63 @@
-# GitHub Codespaces Oracle Test Environment
+# GitHub Codespaces Oracle Performance Testing Environment
 
 ## Overview
 
-This dev container provides a complete Oracle Database XE 21c environment for testing the Table Migration Framework. It includes:
+This dev container provides a **high-performance Oracle Database XE 21c environment** optimized for the largest GitHub Codespace machine (32-core, 64GB RAM). It includes:
 
-- **Oracle Database XE 21c** (container: `oracle`)
-- **Python 3.11** with migration tools
+- **Oracle Database XE 21c** with 16 CPU cores and 32GB RAM allocated
+- **Python 3.11** with migration tools and 8 CPU cores allocated
 - **Pre-configured test schemas**: HR and HR_APP
 - **Pre-loaded test data**: 1.67M rows across 7 tables
+- **Performance monitoring tools** for benchmarking and optimization
+
+## 🚀 Performance Configuration
+
+### Codespace Machine Specifications
+- **32 vCPUs** (physical cores)
+- **64 GB RAM**
+- **128 GB Storage**
+
+### Resource Allocation
+- **Oracle Container**: 16 cores, 32GB RAM, 8GB SGA
+- **Workspace Container**: 8 cores, 16GB RAM
+- **Optimized for**: High-volume migrations, concurrent testing, performance benchmarking
+
+For detailed performance configuration, see [performance-config.md](performance-config.md)
 
 ## Quick Start
 
-### 1. Open in Codespaces
+### 1. Open in Codespaces with Large Machine
 
-Click the "Code" button → "Codespaces" → "Create codespace on [branch]"
+Click "Code" → "Codespaces" → "..." → "New with options"
+- **Machine type**: Select **32-core** (for performance testing)
+- **Branch**: `feature/oracle-migration-improvements`
 
-The environment will automatically:
-1. Start Oracle XE database
-2. Create HR and HR_APP schemas
-3. Create 7 test tables (partitioned and non-partitioned)
-4. Load 1.67 million rows of test data
-5. Install Python dependencies
-6. Configure Oracle clients
+**Startup time:** ~3-5 minutes (includes Oracle initialization)
 
-**Startup time:** ~3-5 minutes
+### 2. Setup Performance Testing
 
-### 2. Verify Environment
+```bash
+# Run automated performance setup
+bash .devcontainer/setup-performance-test.sh
+```
+
+This will:
+- Wait for Oracle to be ready
+- Apply performance tuning parameters
+- Grant necessary privileges
+- Gather schema statistics
+
+### 3. Monitor Performance
+
+```bash
+# One-time performance report
+bash .devcontainer/monitor-performance.sh
+
+# Continuous monitoring (refresh every 5 seconds)
+watch -n 5 bash .devcontainer/monitor-performance.sh
+```
+
+### 4. Verify Environment
 
 ```bash
 # Check Oracle database is running
@@ -329,6 +361,70 @@ sqlplus system/Oracle123!@oracle:1521/XEPDB1 @.devcontainer/init-scripts/01_crea
 sqlplus hr/hr123@oracle:1521/XEPDB1 @.devcontainer/init-scripts/02_create_hr_tables.sql
 sqlplus hr_app/hrapp123@oracle:1521/XEPDB1 @.devcontainer/init-scripts/03_create_hr_app_tables.sql
 sqlplus system/Oracle123!@oracle:1521/XEPDB1 @.devcontainer/init-scripts/04_generate_test_data.sql
+```
+
+## Performance Tips
+
+### Best Practices for Performance Testing
+
+1. **Monitor Before and During Migration**
+   ```bash
+   # Terminal 1: Run migration
+   sqlplus hr/hr123@oracle:1521/XEPDB1 @master1.sql
+   
+   # Terminal 2: Monitor performance
+   watch -n 5 bash .devcontainer/monitor-performance.sh
+   ```
+
+2. **Use Parallel Execution** (already in templates)
+   - Default parallelism is set to 4
+   - Can scale up to 16 with available cores
+   - Monitor CPU usage to optimize degree
+
+3. **Check Partition Distribution**
+   ```sql
+   SELECT partition_name, subpartition_name, num_rows
+   FROM user_tab_subpartitions
+   WHERE table_name = 'EMPLOYEES_NEW'
+   ORDER BY partition_position, subpartition_position;
+   ```
+
+4. **Gather Statistics After Migration**
+   ```sql
+   EXEC DBMS_STATS.GATHER_TABLE_STATS('HR', 'EMPLOYEES_NEW', CASCADE=>TRUE);
+   ```
+
+5. **Monitor Wait Events**
+   - Check `.devcontainer/monitor-performance.sh` output
+   - Look for I/O wait events
+   - Optimize queries causing contention
+
+### Performance Benchmarks
+
+Expected performance on 32-core Codespace:
+
+| Operation | Target Rate | Notes |
+|-----------|-------------|-------|
+| Initial Data Load | > 100K rows/sec | Bulk INSERT with PARALLEL |
+| Delta Load | > 50K rows/sec | Incremental INSERT |
+| Index Creation | < 30 sec/1M rows | Parallel index build |
+| Partition Creation | < 1 sec | Automatic interval |
+| Table Swap | < 5 sec | RENAME operation |
+
+### Resource Monitoring Commands
+
+```bash
+# System resources
+docker stats oracle-test-db workspace
+
+# Oracle-specific monitoring
+bash .devcontainer/monitor-performance.sh
+
+# Check Oracle alert log
+docker exec oracle-test-db tail -f /opt/oracle/diag/rdbms/xe/XE/trace/alert_XE.log
+
+# Watch active sessions
+watch -n 2 'docker exec oracle-test-db sqlplus -s sys/Oracle123!@XEPDB1 as sysdba <<< "SELECT sid, username, status, event FROM v\$session WHERE username IS NOT NULL;"'
 ```
 
 ## Performance Tips
