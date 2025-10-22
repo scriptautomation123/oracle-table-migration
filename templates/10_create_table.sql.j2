@@ -67,7 +67,7 @@ PROMPT LOB Columns: {{ current_state.lob_count }}
 {%- endif %}
 PROMPT ================================================================
 
--- Drop table if exists (safety check)
+-- Check if table already exists
 DECLARE
     v_count NUMBER;
 BEGIN
@@ -77,15 +77,15 @@ BEGIN
       AND table_name = '{{ new_table_name }}';
     
     IF v_count > 0 THEN
-        EXECUTE IMMEDIATE 'DROP TABLE {{ owner }}.{{ new_table_name }} PURGE';
-        DBMS_OUTPUT.PUT_LINE('✓ Dropped existing table {{ owner }}.{{ new_table_name }}');
+        DBMS_OUTPUT.PUT_LINE('WARNING: Table {{ owner }}.{{ new_table_name }} already exists!');
+        DBMS_OUTPUT.PUT_LINE('');
+        DBMS_OUTPUT.PUT_LINE('To drop the existing table manually, run:');
+        DBMS_OUTPUT.PUT_LINE('  DROP TABLE {{ owner }}.{{ new_table_name }} PURGE;');
+        DBMS_OUTPUT.PUT_LINE('');
+        RAISE_APPLICATION_ERROR(-20001, 'Table {{ owner }}.{{ new_table_name }} already exists. Drop it manually before proceeding.');
     ELSE
         DBMS_OUTPUT.PUT_LINE('✓ Table {{ owner }}.{{ new_table_name }} does not exist - proceeding with creation');
     END IF;
-EXCEPTION
-    WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('ERROR: ' || SQLERRM);
-        RAISE;
 END;
 /
 
@@ -98,10 +98,34 @@ CREATE TABLE {{ owner }}.{{ new_table_name }}
 (
 {{ column_definitions }}
 )
+{%- if storage_parameters and storage_parameters.compression and storage_parameters.compression != 'DISABLED' %}
+COMPRESS FOR {{ storage_parameters.compress_for | default('OLTP') }}
+{%- endif %}
 TABLESPACE {{ target_configuration.tablespace }}
-{%- if lob_columns and lob_columns | length > 0 %}
--- LOB Storage Clauses
-{{ lob_columns | lob_storage(target_configuration.tablespace) }}
+{%- if storage_parameters and storage_parameters.pct_free %}
+PCTFREE {{ storage_parameters.pct_free }}
+{%- endif %}
+{%- if storage_parameters and storage_parameters.ini_trans %}
+INITRANS {{ storage_parameters.ini_trans }}
+{%- endif %}
+{%- if storage_parameters and storage_parameters.max_trans %}
+MAXTRANS {{ storage_parameters.max_trans }}
+{%- endif %}
+{%- if storage_parameters and storage_parameters.initial_extent %}
+STORAGE (
+    INITIAL {{ storage_parameters.initial_extent }}
+{%- if storage_parameters.next_extent %}
+    NEXT {{ storage_parameters.next_extent }}
+{%- endif %}
+{%- if storage_parameters.buffer_pool %}
+    BUFFER_POOL {{ storage_parameters.buffer_pool }}
+{%- endif %}
+)
+{%- endif %}
+{%- if lob_storage and lob_storage | length > 0 %}
+{%- for lob in lob_storage %}
+LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }} (TABLESPACE {{ lob.tablespace_name | default(target_configuration.tablespace) }})
+{%- endfor %}
 {%- endif %}
 {%- if target_configuration.partition_type == 'INTERVAL' %}
 PARTITION BY RANGE ({{ target_configuration.partition_column }})

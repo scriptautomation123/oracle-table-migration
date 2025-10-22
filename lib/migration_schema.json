@@ -70,6 +70,32 @@
           "pattern": "^[A-Z][A-Z0-9_$#]*$"
         },
         
+        "column_definitions": {
+          "type": "string",
+          "description": "Complete DDL column definitions for CREATE TABLE statement"
+        },
+        
+        "lob_storage": {
+          "type": "array",
+          "description": "LOB storage configuration details",
+          "items": {
+            "type": "object"
+          }
+        },
+        
+        "storage_parameters": {
+          "type": "object",
+          "description": "Table storage parameters (compression, pctfree, etc.)"
+        },
+        
+        "indexes": {
+          "type": "array",
+          "description": "Index definitions with columns and storage",
+          "items": {
+            "type": "object"
+          }
+        },
+        
         "current_state": {
           "type": "object",
           "description": "Current table state",

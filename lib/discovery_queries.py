@@ -409,6 +409,224 @@ class TableDiscovery:
         cursor.close()
         return columns
 
+    def _get_all_columns_ddl(self, table_name: str) -> str:
+        """Get complete column definitions as DDL for CREATE TABLE statement"""
+        cursor = self.connection.cursor()
+
+        query = """
+            SELECT 
+                column_name,
+                data_type,
+                data_length,
+                data_precision,
+                data_scale,
+                nullable,
+                data_default,
+                char_length
+            FROM all_tab_columns
+            WHERE owner = :schema
+              AND table_name = :table_name
+            ORDER BY column_id
+        """
+
+        cursor.execute(query, schema=self.schema, table_name=table_name)
+        
+        column_defs = []
+        for row in cursor.fetchall():
+            col_name = row[0]
+            data_type = row[1]
+            data_length = row[2]
+            data_precision = row[3]
+            data_scale = row[4]
+            nullable = row[5]
+            data_default = row[6]
+            char_length = row[7]
+            
+            # Build column definition
+            col_def = f"    {col_name} "
+            
+            # Format data type with proper precision/scale
+            if data_type in ('VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR'):
+                col_def += f"{data_type}({char_length})"
+            elif data_type == 'NUMBER':
+                if data_precision is not None:
+                    if data_scale is not None and data_scale > 0:
+                        col_def += f"NUMBER({data_precision},{data_scale})"
+                    else:
+                        col_def += f"NUMBER({data_precision})"
+                else:
+                    col_def += "NUMBER"
+            elif data_type in ('TIMESTAMP', 'TIMESTAMP WITH TIME ZONE', 'TIMESTAMP WITH LOCAL TIME ZONE'):
+                col_def += data_type
+            elif data_type == 'DATE':
+                col_def += "DATE"
+            elif data_type in ('CLOB', 'BLOB', 'NCLOB'):
+                col_def += data_type
+            elif data_type == 'RAW':
+                col_def += f"RAW({data_length})"
+            else:
+                col_def += data_type
+            
+            # Add default value if exists
+            if data_default is not None:
+                default_val = str(data_default).strip()
+                col_def += f" DEFAULT {default_val}"
+            
+            # Add NULL/NOT NULL constraint
+            if nullable == 'N':
+                col_def += " NOT NULL"
+            
+            column_defs.append(col_def)
+        
+        cursor.close()
+        return ",\n".join(column_defs) if column_defs else "    -- NO COLUMNS FOUND"
+
+    def _get_lob_storage_details(self, table_name: str) -> List[Dict]:
+        """Get LOB column storage details for proper DDL generation"""
+        cursor = self.connection.cursor()
+
+        query = """
+            SELECT 
+                l.column_name,
+                l.segment_name,
+                l.tablespace_name,
+                l.securefile,
+                l.compression,
+                l.deduplication,
+                l.in_row,
+                l.chunk,
+                l.cache
+            FROM all_lobs l
+            WHERE l.owner = :schema
+              AND l.table_name = :table_name
+            ORDER BY l.column_name
+        """
+
+        cursor.execute(query, schema=self.schema, table_name=table_name)
+        
+        lob_details = []
+        for row in cursor.fetchall():
+            lob_details.append({
+                "column_name": row[0],
+                "segment_name": row[1],
+                "tablespace_name": row[2],
+                "securefile": row[3],
+                "compression": row[4],
+                "deduplication": row[5],
+                "in_row": row[6],
+                "chunk": row[7],
+                "cache": row[8]
+            })
+        
+        cursor.close()
+        return lob_details
+
+    def _get_table_storage_params(self, table_name: str) -> Dict:
+        """Get table storage parameters (COMPRESS, PCTFREE, etc.)"""
+        cursor = self.connection.cursor()
+
+        query = """
+            SELECT 
+                compression,
+                compress_for,
+                pct_free,
+                ini_trans,
+                max_trans,
+                initial_extent,
+                next_extent,
+                buffer_pool
+            FROM all_tables
+            WHERE owner = :schema
+              AND table_name = :table_name
+        """
+
+        cursor.execute(query, schema=self.schema, table_name=table_name)
+        row = cursor.fetchone()
+        
+        storage_params = {}
+        if row:
+            storage_params = {
+                "compression": row[0],
+                "compress_for": row[1],
+                "pct_free": row[2],
+                "ini_trans": row[3],
+                "max_trans": row[4],
+                "initial_extent": row[5],
+                "next_extent": row[6],
+                "buffer_pool": row[7]
+            }
+        
+        cursor.close()
+        return storage_params
+
+    def _get_index_details(self, table_name: str) -> List[Dict]:
+        """Get index definitions with columns and storage details from source table"""
+        cursor = self.connection.cursor()
+
+        # First, get column list for each index
+        query_columns = """
+            SELECT 
+                index_name,
+                LISTAGG(column_name, ', ') WITHIN GROUP (ORDER BY column_position) AS index_columns
+            FROM all_ind_columns
+            WHERE index_owner = :schema
+              AND table_name = :table_name
+            GROUP BY index_name
+        """
+        
+        cursor.execute(query_columns, schema=self.schema, table_name=table_name)
+        index_columns_map = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Now get full index details with storage parameters
+        query = """
+            SELECT 
+                i.index_name,
+                i.index_type,
+                i.uniqueness,
+                i.tablespace_name,
+                i.compression,
+                i.prefix_length,
+                i.locality,
+                i.pct_free,
+                i.ini_trans,
+                i.max_trans,
+                i.degree,
+                i.partitioned
+            FROM all_indexes i
+            WHERE i.table_owner = :schema
+              AND i.table_name = :table_name
+            ORDER BY i.index_name
+        """
+
+        cursor.execute(query, schema=self.schema, table_name=table_name)
+        
+        indexes = []
+        for row in cursor.fetchall():
+            idx_name = row[0]
+            
+            # Determine if REVERSE by checking index type
+            is_reverse = 'REVERSE' in str(row[1]) if row[1] else False
+            
+            indexes.append({
+                "index_name": idx_name,
+                "index_type": row[1],
+                "uniqueness": row[2],  # UNIQUE or NONUNIQUE
+                "tablespace_name": row[3],
+                "compression": row[4],  # ENABLED or DISABLED
+                "prefix_length": row[5],  # Compression prefix length
+                "locality": row[6],  # LOCAL or GLOBAL
+                "pct_free": row[7],
+                "ini_trans": row[8],
+                "max_trans": row[9],
+                "degree": row[10],  # Parallel degree
+                "partitioned": row[11],  # YES or NO
+                "columns": index_columns_map.get(idx_name, ""),
+                "is_reverse": is_reverse
+            })
+        
+        cursor.close()
+        return indexes
+
     def _analyze_table(
         self,
         table_name: str,
@@ -528,11 +746,21 @@ class TableDiscovery:
             "parallel_degree": recommended_parallel,
         }
 
+        # Get complete column DDL and storage details
+        column_definitions_ddl = self._get_all_columns_ddl(table_name)
+        lob_storage_details = self._get_lob_storage_details(table_name)
+        storage_params = self._get_table_storage_params(table_name)
+        index_details = self._get_index_details(table_name)
+
         # Build complete table config
         table_config = {
             "enabled": should_enable,
             "owner": self.schema,
             "table_name": table_name,
+            "column_definitions": column_definitions_ddl,
+            "lob_storage": lob_storage_details,
+            "storage_parameters": storage_params,
+            "indexes": index_details,
             "current_state": current_state,
             "available_columns": {
                 "timestamp_columns": timestamp_columns,

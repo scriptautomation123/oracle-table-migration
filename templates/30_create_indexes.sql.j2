@@ -29,10 +29,49 @@ PROMPT ================================================================
 -- Enable parallel DDL
 ALTER SESSION FORCE PARALLEL DDL PARALLEL {{ target_configuration.parallel_degree }};
 
--- Index definitions will be generated dynamically
-{{ index_definitions }}
+{%- if indexes and indexes | length > 0 %}
+{%- for idx in indexes %}
+
+-- Index: {{ idx.index_name }} ({{ idx.index_type }})
+PROMPT Creating index {{ idx.index_name }}_NEW...
+CREATE {% if idx.uniqueness == 'UNIQUE' %}UNIQUE {% endif %}INDEX "{{ owner }}"."{{ idx.index_name }}_NEW"
+ON "{{ owner }}"."{{ new_table_name }}" ({{ idx.columns }})
+{%- if idx.compression == 'ENABLED' %}
+{%- if idx.prefix_length and idx.prefix_length > 0 %}
+COMPRESS {{ idx.prefix_length }}
+{%- else %}
+COMPRESS
+{%- endif %}
+{%- endif %}
+{%- if idx.locality == 'LOCAL' or (idx.partitioned == 'YES' and not idx.locality) %}
+LOCAL
+{%- endif %}
+TABLESPACE {{ idx.tablespace_name }}
+{%- if idx.pct_free is not none %}
+PCTFREE {{ idx.pct_free }}
+{%- endif %}
+{%- if idx.ini_trans is not none %}
+INITRANS {{ idx.ini_trans }}
+{%- endif %}
+{%- if idx.max_trans is not none %}
+MAXTRANS {{ idx.max_trans }}
+{%- endif %}
+{%- if idx.degree and idx.degree not in ('0', '1', 'DEFAULT') %}
+PARALLEL {{ idx.degree }}
+{%- else %}
+NOPARALLEL
+{%- endif %}
+{%- if idx.is_reverse %}
+REVERSE
+{%- endif %};
+
+{%- endfor %}
+{%- else %}
+-- No indexes found to recreate
+PROMPT WARNING: No index metadata found. You may need to create indexes manually.
+{%- endif %}
 
 -- Reset parallel settings
 ALTER SESSION FORCE PARALLEL DDL;
 
-PROMPT ✓ Step 30 Complete: {{ current_state.index_count }} index(es) created
+PROMPT ✓ Step 30 Complete: {{ indexes | length if indexes else 0 }} index(es) created

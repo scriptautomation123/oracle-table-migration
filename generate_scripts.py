@@ -666,14 +666,16 @@ class MigrationScriptGenerator:
             "migration_settings": table_config.get("migration_settings", {}),
             # Columns
             "column_list": ", ".join(all_columns) if all_columns else "*",
-            "column_definitions": "-- Column definitions to be extracted from source table",
+            "column_definitions": table_config.get("column_definitions", "-- ERROR: Column definitions not found in config"),
             "primary_key_columns": target_config.get(
                 "partition_column", all_columns[0] if all_columns else "ID"
             ),
-            # LOBs
-            "lob_columns": [],  # Would be populated from database
+            # Storage and LOBs
+            "lob_storage": table_config.get("lob_storage", []),
+            "storage_parameters": table_config.get("storage_parameters", {}),
             # Indexes
-            "index_definitions": f"-- {current_state.get('index_count', 0)} index definitions to be generated",
+            "indexes": table_config.get("indexes", []),
+            "index_definitions": f"-- {current_state.get('index_count', 0)} index definitions from config",
             # Grants
             "grant_statements": "-- Grant statements to be generated",
             # Timestamps
