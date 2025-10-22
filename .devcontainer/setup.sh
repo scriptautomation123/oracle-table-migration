@@ -13,7 +13,7 @@ max_attempts=30
 attempt=0
 
 while [ $attempt -lt $max_attempts ]; do
-    if sqlplus -s hr/hr123@oracle:1521/XEPDB1 <<< "SELECT 'DB_READY' FROM DUAL;" | grep -q "DB_READY"; then
+    if sqlplus -s hr/hr123@oracle:1521/FREEPDB1 <<< "SELECT 'DB_READY' FROM DUAL;" | grep -q "DB_READY"; then
         echo "✓ Oracle database is ready"
         break
     fi
@@ -40,12 +40,12 @@ echo ""
 echo "Creating tnsnames.ora..."
 mkdir -p ~/oracle
 cat > ~/oracle/tnsnames.ora <<EOF
-XEPDB1 =
+FREEPDB1 =
   (DESCRIPTION =
     (ADDRESS = (PROTOCOL = TCP)(HOST = oracle)(PORT = 1521))
     (CONNECT_DATA =
       (SERVER = DEDICATED)
-      (SERVICE_NAME = XEPDB1)
+      (SERVICE_NAME = FREEPDB1)
     )
   )
 EOF
@@ -58,16 +58,16 @@ echo "✓ tnsnames.ora created at ~/oracle/tnsnames.ora"
 echo ""
 echo "Testing database connections..."
 echo "  HR schema:"
-sqlplus -s hr/hr123@oracle:1521/XEPDB1 <<EOF
+sqlplus -s hr/hr123@oracle:1521/FREEPDB1 <<EOF
 SET PAGESIZE 0 FEEDBACK OFF VERIFY OFF HEADING OFF
 SELECT '    ✓ Connected as HR' FROM DUAL;
 EXIT;
 EOF
 
-echo "  HR_APP schema:"
-sqlplus -s hr_app/hrapp123@oracle:1521/XEPDB1 <<EOF
+echo "  HR_APP_USER schema:"
+sqlplus -s hr_app_user/hrapp123@oracle:1521/FREEPDB1 <<EOF
 SET PAGESIZE 0 FEEDBACK OFF VERIFY OFF HEADING OFF
-SELECT '    ✓ Connected as HR_APP' FROM DUAL;
+SELECT '    ✓ Connected as HR_APP_USER' FROM DUAL;
 EXIT;
 EOF
 
@@ -78,15 +78,15 @@ echo "Test Environment Ready!"
 echo "=========================================="
 echo ""
 echo "Database Credentials:"
-echo "  System:  sys/Oracle123!@oracle:1521/XEPDB1 as sysdba"
-echo "  HR:      hr/hr123@oracle:1521/XEPDB1"
-echo "  HR_APP:  hr_app/hrapp123@oracle:1521/XEPDB1"
+echo "  System:      sys/Oracle123!@oracle:1521/FREEPDB1 as sysdba"
+echo "  HR:          hr/hr123@oracle:1521/FREEPDB1"
+echo "  HR_APP_USER: hr_app_user/hrapp123@oracle:1521/FREEPDB1"
 echo ""
 echo "Connection String Format:"
-echo "  hr/hr123@oracle:1521/XEPDB1"
+echo "  hr/hr123@oracle:1521/FREEPDB1"
 echo ""
 echo "Test Tables Created:"
-sqlplus -s hr/hr123@oracle:1521/XEPDB1 <<EOF
+sqlplus -s hr/hr123@oracle:1521/FREEPDB1 <<EOF
 SET PAGESIZE 50 FEEDBACK OFF
 SELECT '  HR.' || table_name || 
        ' (' || NVL(TO_CHAR(num_rows, '999,999,999'), 'NO STATS') || ' rows)' as "Test Tables"
@@ -95,11 +95,13 @@ ORDER BY table_name;
 EXIT;
 EOF
 
-sqlplus -s hr_app/hrapp123@oracle:1521/XEPDB1 <<EOF
+echo ""
+echo "Verifying HR_APP_USER can access HR tables:"
+sqlplus -s hr_app_user/hrapp123@oracle:1521/FREEPDB1 <<EOF
 SET PAGESIZE 50 FEEDBACK OFF
-SELECT '  HR_APP.' || table_name || 
-       ' (' || NVL(TO_CHAR(num_rows, '999,999,999'), 'NO STATS') || ' rows)' as "Test Tables"
-FROM user_tables
+SELECT '  HR.' || table_name || ' (accessible)' as "Accessible Tables"
+FROM all_tables 
+WHERE owner = 'HR'
 ORDER BY table_name;
 EXIT;
 EOF
@@ -107,6 +109,6 @@ EOF
 echo ""
 echo "Quick Start Commands:"
 echo "  cd /workspace/table_migration"
-echo "  python3 02_generator/generate_scripts.py --discover --schema HR --connection hr/hr123@oracle:1521/XEPDB1"
+echo "  python3 02_generator/generate_scripts.py --discover --schema HR --connection hr/hr123@oracle:1521/FREEPDB1"
 echo ""
 echo "=========================================="

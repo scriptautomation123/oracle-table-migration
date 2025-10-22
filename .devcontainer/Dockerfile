@@ -3,16 +3,17 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 # Install Oracle Instant Client and tools
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
-        python3-pip \
-        python3-dev \
-        build-essential \
-        libaio1t64 \
-        wget \
-        unzip \
-        curl \
-        vim \
-        less \
-        git \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    libaio1t64 \
+    libaio1 \
+    wget \
+    unzip \
+    curl \
+    vim \
+    less \
+    git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -49,8 +50,7 @@ WORKDIR /workspace
 
 # Add healthcheck to verify Oracle client and Python environment
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python3 -c "import oracledb; print('Oracle client OK')" && \
-        echo "SELECT 1 FROM DUAL;" | sqlplus -S -L / 2>/dev/null || exit 1
+    CMD python3 -c "import oracledb; print('Oracle client OK')" || exit 1
 
 # Default user
 USER vscode

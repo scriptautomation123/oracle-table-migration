@@ -14,6 +14,9 @@ WHENEVER SQLERROR CONTINUE
 SET ECHO ON
 SET SERVEROUTPUT ON
 
+-- Connect to the pluggable database (scripts run as SYS in FREE instance by default)
+ALTER SESSION SET CONTAINER=FREEPDB1;
+
 PROMPT ========================================================================
 PROMPT Setting up HR Schema (Table Owner)
 PROMPT ========================================================================
@@ -104,8 +107,8 @@ PROMPT   - HR_APP role: Has SELECT, INSERT, UPDATE, DELETE, EXECUTE on HR object
 PROMPT   - HR_APP_USER: Connects using HR_APP role (no ownership)
 PROMPT
 PROMPT Connections:
-PROMPT   - Table Owner: hr/hr123@oracle:1521/XEPDB1
-PROMPT   - Application:  hr_app_user/hrapp123@oracle:1521/XEPDB1
+PROMPT   - Table Owner: hr/hr123@oracle:1521/FREEPDB1
+PROMPT   - Application:  hr_app_user/hrapp123@oracle:1521/FREEPDB1
 PROMPT
 PROMPT All tables will be created under HR schema.
 PROMPT HR_APP_USER can access via: SELECT * FROM HR.EMPLOYEES
