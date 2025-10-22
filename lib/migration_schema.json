@@ -70,9 +70,23 @@
           "pattern": "^[A-Z][A-Z0-9_$#]*$"
         },
 
-        "column_definitions": {
-          "type": "string",
-          "description": "Complete DDL column definitions for CREATE TABLE statement"
+        "columns": {
+          "type": "array",
+          "description": "Array of column metadata for CREATE TABLE statement",
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "length", "precision", "scale", "nullable", "default", "char_length"],
+            "properties": {
+              "name": { "type": "string", "description": "Column name" },
+              "type": { "type": "string", "description": "Oracle data type" },
+              "length": { "type": ["integer", "null"], "description": "Data length" },
+              "precision": { "type": ["integer", "null"], "description": "Data precision" },
+              "scale": { "type": ["integer", "null"], "description": "Data scale" },
+              "nullable": { "type": "string", "enum": ["Y", "N"], "description": "Whether column allows NULL" },
+              "default": { "type": ["string", "null"], "description": "Default value" },
+              "char_length": { "type": ["integer", "null"], "description": "Character length (for CHAR/VARCHAR2)" }
+            }
+          }
         },
 
         "lob_storage": {

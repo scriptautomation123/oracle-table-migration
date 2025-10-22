@@ -410,12 +410,9 @@ class TableDiscovery:
         cursor.close()
         return columns
 
-    def _get_all_columns_ddl(self, table_name: str) -> str:
-        """Get complete column definitions as DDL for CREATE TABLE statement (Oracle 19c+)"""
+    def _get_all_columns_metadata(self, table_name: str) -> List[Dict]:
+        """Get complete column metadata for CREATE TABLE statement (Oracle 19c+)"""
         cursor = self.connection.cursor()
-
-        # Try to check if VIRTUAL_COLUMN exists in all_tab_columns
-        # Different Oracle versions may or may not have this column
         try:
             query = """
                 SELECT
@@ -435,7 +432,6 @@ class TableDiscovery:
             """
             cursor.execute(query, schema=self.schema, table_name=table_name)
         except Exception:
-            # If VIRTUAL_COLUMN doesn't exist, query without it
             query = """
                 SELECT
                     column_name,
@@ -454,7 +450,7 @@ class TableDiscovery:
             """
             cursor.execute(query, schema=self.schema, table_name=table_name)
 
-        column_defs = []
+        columns = []
         for row in cursor.fetchall():
             col_name = row[0]
             data_type = row[1]
@@ -466,50 +462,22 @@ class TableDiscovery:
             char_length = row[7]
             is_virtual = row[8]
 
-            # Skip virtual columns as they are computed
             if is_virtual == 'YES':
                 continue
 
-            # Build column definition
-            col_def = f"    {col_name} "
-
-            # Format data type with proper precision/scale
-            if data_type in ('VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR'):
-                col_def += f"{data_type}({char_length})"
-            elif data_type == 'NUMBER':
-                if data_precision is not None:
-                    if data_scale is not None and data_scale > 0:
-                        col_def += f"NUMBER({data_precision},{data_scale})"
-                    else:
-                        col_def += f"NUMBER({data_precision})"
-                else:
-                    col_def += "NUMBER"
-            elif data_type in ('TIMESTAMP', 'TIMESTAMP WITH TIME ZONE', 'TIMESTAMP WITH LOCAL TIME ZONE'):
-                col_def += data_type
-            elif data_type == 'DATE':
-                col_def += "DATE"
-            elif data_type in ('CLOB', 'BLOB', 'NCLOB'):
-                col_def += data_type
-            elif data_type == 'RAW':
-                col_def += f"RAW({data_length})"
-            elif data_type == 'JSON':
-                col_def += "JSON"  # Oracle 21c+
-            else:
-                col_def += data_type
-
-            # Add default value if exists
-            if data_default is not None:
-                default_val = str(data_default).strip()
-                col_def += f" DEFAULT {default_val}"
-
-            # Add NULL/NOT NULL constraint
-            if nullable == 'N':
-                col_def += " NOT NULL"
-
-            column_defs.append(col_def)
+            columns.append({
+                "name": col_name,
+                "type": data_type,
+                "length": data_length,
+                "precision": data_precision,
+                "scale": data_scale,
+                "nullable": nullable,
+                "default": str(data_default).strip() if data_default is not None else None,
+                "char_length": char_length
+            })
 
         cursor.close()
-        return ",\n".join(column_defs) if column_defs else "    -- NO COLUMNS FOUND"
+        return columns
 
     def _get_lob_storage_details(self, table_name: str) -> List[Dict]:
         """Get LOB column storage details for proper DDL generation"""
@@ -790,18 +758,22 @@ class TableDiscovery:
             "parallel_degree": recommended_parallel
         }
 
-        # Get complete column DDL and storage details
-        column_definitions_ddl = self._get_all_columns_ddl(table_name)
+        # Get complete column metadata and storage details
+        columns_metadata = self._get_all_columns_metadata(table_name)
         lob_storage_details = self._get_lob_storage_details(table_name)
         storage_params = self._get_table_storage_params(table_name)
         index_details = self._get_index_details(table_name)
 
-        # Build complete table config
+        # Always fill storage parameters from metadata, never leave null
+        for k in ["compression", "compress_for", "pct_free", "ini_trans", "max_trans", "initial_extent", "next_extent", "buffer_pool"]:
+            if k not in storage_params or storage_params[k] is None:
+                storage_params[k] = ""  # Use empty string if not available
+
         table_config = {
             "enabled": should_enable,
             "owner": self.schema,
             "table_name": table_name,
-            "column_definitions": column_definitions_ddl,
+            "columns": columns_metadata,
             "lob_storage": lob_storage_details,
             "storage_parameters": storage_params,
             "indexes": index_details,
