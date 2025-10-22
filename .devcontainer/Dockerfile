@@ -33,20 +33,24 @@ ENV ORACLE_HOME=/opt/oracle/instantclient_21_13
 ENV LD_LIBRARY_PATH=$ORACLE_HOME:$LD_LIBRARY_PATH
 ENV PATH=$ORACLE_HOME:$PATH
 
-# Install Python packages
+# Install Python packages and create workspace directory
 # Using --break-system-packages is safe in a container environment
 RUN pip3 install --no-cache-dir --break-system-packages \
-    oracledb \
-    jinja2 \
-    jsonschema \
-    ansible \
-    pytest \
-    black \
-    pylint
+    oracledb==2.0.1 \
+    jinja2==3.1.4 \
+    jsonschema==4.23.0 \
+    ansible==10.4.0 \
+    pytest==8.3.3 \
+    black==24.8.0 \
+    pylint==3.2.7 \
+    && mkdir -p /workspace
 
-# Create workspace directory
-RUN mkdir -p /workspace
 WORKDIR /workspace
+
+# Add healthcheck to verify Oracle client and Python environment
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python3 -c "import oracledb; print('Oracle client OK')" && \
+        echo "SELECT 1 FROM DUAL;" | sqlplus -S -L / 2>/dev/null || exit 1
 
 # Default user
 USER vscode

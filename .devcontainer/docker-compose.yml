@@ -21,15 +21,15 @@ services:
       ENABLE_ARCHIVELOG: false
     
     ports:
-      - "1521:1521"
-      - "5500:5500"
+      - 1521:1521
+      - 5500:5500
     
     volumes:
       - oracle-data:/opt/oracle/oradata
       - ./init-scripts:/docker-entrypoint-initdb.d/startup
     
     healthcheck:
-      test: ["CMD-SHELL", "healthcheck.sh"]
+      test: [CMD-SHELL, healthcheck.sh]
       interval: 30s
       timeout: 10s
       retries: 10
