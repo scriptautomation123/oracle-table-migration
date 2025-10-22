@@ -4,13 +4,8 @@
   "service": "workspace",
   "workspaceFolder": "/workspace",
   
-  // Request largest Codespace machine for Oracle performance testing
-  // 32-core, 64GB RAM, 128GB storage
-  "hostRequirements": {
-    "cpus": 32,
-    "memory": "64gb",
-    "storage": "128gb"
-  },
+  // Optimized for large Codespace machines (32-core recommended for performance testing)
+  // Will work on any machine size - select 32-core manually during creation for best performance
   
   "features": {
     "ghcr.io/devcontainers/features/python:1": {

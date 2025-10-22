@@ -35,18 +35,18 @@ services:
       retries: 10
       start_period: 90s
     
-    # Resource limits optimized for largest Codespace (32-core, 64GB RAM)
-    # Allocate significant resources to Oracle for performance testing
-    # Note: Using memory limits only as CPU limits can cause issues in some environments
+    # Resource limits optimized for performance testing
+    # Works on any Codespace size - allocates more on larger machines
+    # For best performance, use 32-core machine (limits scale automatically)
     deploy:
       resources:
         limits:
-          memory: 32G
-        reservations:
           memory: 16G
+        reservations:
+          memory: 4G
     
     # Shared memory for Oracle SGA - critical for performance
-    shm_size: 8gb
+    shm_size: 4gb
     
     networks:
       - oracle-network
@@ -72,9 +72,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 16G
-        reservations:
           memory: 8G
+        reservations:
+          memory: 2G
     
     environment:
       ORACLE_HOST: oracle
