@@ -49,22 +49,14 @@ PROMPT ================================================================
 PROMPT Step 10: Creating New Partitioned Table
 PROMPT ================================================================
 PROMPT Table: {{ owner }}.{{ new_table_name }}
-{%- if target_configuration.partition_type == 'INTERVAL' %}
-PROMPT Partitioning: INTERVAL ({{ target_configuration.interval_type }})
-{%- else %}
-PROMPT Partitioning: {{ target_configuration.partition_type }}
-{%- endif %}
+PROMPT Partitioning: {{ target_configuration.partition_type }}{% if target_configuration.partition_type == 'INTERVAL' %} ({{ target_configuration.interval_type }}){% endif %}
 PROMPT Partition Column: {{ target_configuration.partition_column }}
-{%- if target_configuration.subpartition_type == 'HASH' %}
-PROMPT Subpartitioning: HASH on {{ target_configuration.subpartition_column }}
-PROMPT Hash Subpartitions: {{ target_configuration.subpartition_count }}
-{%- else %}
-PROMPT Subpartitioning: NONE
-{%- endif %}
+PROMPT Subpartitioning: {% if target_configuration.subpartition_type == 'HASH' %}HASH on {{ target_configuration.subpartition_column }}{% else %}NONE{% endif %}
+PROMPT Hash Subpartitions: {% if target_configuration.subpartition_type == 'HASH' %}{{ target_configuration.subpartition_count }}{% endif %}
 PROMPT Tablespace: {{ target_configuration.tablespace }}
-{%- if current_state.lob_count > 0 %}
+{% if current_state.lob_count > 0 %}
 PROMPT LOB Columns: {{ current_state.lob_count }}
-{%- endif %}
+{% endif %}
 PROMPT ================================================================
 
 -- Check if table already exists (generic)
@@ -72,12 +64,13 @@ PROMPT ================================================================
 
 -- Create new table with partitioning
 PROMPT
+
 PROMPT Creating table {{ owner }}.{{ new_table_name }}...
 PROMPT Estimated time: {{ current_state.size_gb | estimate_time('load') }}
 
-CREATE TABLE {{ owner }}.{{ new_table_name }}
+CREATE TABLE "{{ owner }}"."{{ new_table_name }}"
 (
-{{ column_definitions }}
+    {{ column_definitions | replace('\n', '\n    ') }}
 )
 {%- if storage_parameters and storage_parameters.compression and storage_parameters.compression != 'DISABLED' %}
 COMPRESS FOR {{ storage_parameters.compress_for | default('OLTP') }}
@@ -94,64 +87,62 @@ MAXTRANS {{ storage_parameters.max_trans }}
 {%- endif %}
 {%- if storage_parameters and (storage_parameters.initial_extent or storage_parameters.next_extent or storage_parameters.buffer_pool) %}
 STORAGE (
-{%- if storage_parameters.initial_extent %}
+    {%- if storage_parameters.initial_extent %}
     INITIAL {{ storage_parameters.initial_extent }}
-{%- endif %}
-{%- if storage_parameters.next_extent %}
+    {%- endif %}
+    {%- if storage_parameters.next_extent %}
     NEXT {{ storage_parameters.next_extent }}
-{%- endif %}
-{%- if storage_parameters.buffer_pool %}
+    {%- endif %}
+    {%- if storage_parameters.buffer_pool %}
     BUFFER_POOL {{ storage_parameters.buffer_pool }}
-{%- endif %}
+    {%- endif %}
 )
 {%- endif %}
 {%- if target_configuration.partition_type == 'INTERVAL' %}
 PARTITION BY RANGE ({{ target_configuration.partition_column }})
-{%- if target_configuration.interval_type %}
-INTERVAL ({{ target_configuration.interval_type | format_interval(target_configuration.interval_value) }})
-{%- endif %}
-{%- if target_configuration.subpartition_type == 'HASH' %}
-SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
-{%- if lob_storage and lob_storage | length > 0 %}
-SUBPARTITION TEMPLATE
-(
-{%- for i in range(target_configuration.subpartition_count) %}
-    SUBPARTITION sp{{ i }}
-{%- if lob_storage and lob_storage | length > 0 %}
-        {% for lob in lob_storage %}LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
-        {% endfor %}
-{%- endif %}{{ ',' if not loop.last else '' }}
-{%- endfor %}
-)
-{%- else %}
-SUBPARTITIONS {{ target_configuration.subpartition_count }}
-{%- endif %}
-{%- endif %}
-(
-    PARTITION p_seed VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
-)
+    INTERVAL ({{ target_configuration.interval_type | format_interval(target_configuration.interval_value) }})
+    {%- if target_configuration.subpartition_type == 'HASH' %}
+    SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
+        {%- if lob_storage and lob_storage | length > 0 %}
+        SUBPARTITION TEMPLATE
+        (
+            {%- for i in range(target_configuration.subpartition_count) %}
+            SUBPARTITION sp{{ i }}
+                {%- for lob in lob_storage %}
+                LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
+                {%- endfor %}
+            {{ ',' if not loop.last else '' }}
+            {%- endfor %}
+        )
+        {%- else %}
+        SUBPARTITIONS {{ target_configuration.subpartition_count }}
+        {%- endif %}
+    {%- endif %}
+    (
+        PARTITION p_seed VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
+    )
 {%- elif target_configuration.partition_type == 'RANGE' %}
 PARTITION BY RANGE ({{ target_configuration.partition_column }})
-{%- if target_configuration.subpartition_type == 'HASH' %}
-SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
-{%- if lob_storage and lob_storage | length > 0 %}
-SUBPARTITION TEMPLATE
-(
-{%- for i in range(target_configuration.subpartition_count) %}
-    SUBPARTITION sp{{ i }}
-{%- if lob_storage and lob_storage | length > 0 %}
-        {% for lob in lob_storage %}LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
-        {% endfor %}
-{%- endif %}{{ ',' if not loop.last else '' }}
-{%- endfor %}
-)
-{%- else %}
-SUBPARTITIONS {{ target_configuration.subpartition_count }}
-{%- endif %}
-{%- endif %}
-(
-    PARTITION p_seed VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
-)
+    {%- if target_configuration.subpartition_type == 'HASH' %}
+    SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
+        {%- if lob_storage and lob_storage | length > 0 %}
+        SUBPARTITION TEMPLATE
+        (
+            {%- for i in range(target_configuration.subpartition_count) %}
+            SUBPARTITION sp{{ i }}
+                {%- for lob in lob_storage %}
+                LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
+                {%- endfor %}
+            {{ ',' if not loop.last else '' }}
+            {%- endfor %}
+        )
+        {%- else %}
+        SUBPARTITIONS {{ target_configuration.subpartition_count }}
+        {%- endif %}
+    {%- endif %}
+    (
+        PARTITION p_seed VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
+    )
 {%- endif %}
 ENABLE ROW MOVEMENT;
 
