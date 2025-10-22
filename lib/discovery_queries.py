@@ -181,9 +181,14 @@ class TableDiscovery:
         partition_info = {}
         for row in cursor.fetchall():
             table_name = row[0]
+            # Map database NONE to None/null for JSON schema compliance
+            subpart_type = row[2]
+            if subpart_type == "NONE":
+                subpart_type = None
+            
             partition_info[table_name] = {
                 "partitioning_type": row[1],
-                "subpartitioning_type": row[2],
+                "subpartitioning_type": subpart_type,
                 "interval_definition": row[3],
                 "partition_count": row[4],
                 "def_subpartition_count": row[5],
@@ -481,8 +486,8 @@ class TableDiscovery:
                         else None
                     ),
                     "has_subpartitions": has_subpartitions,
-                    "subpartition_type": partition_info.get("subpartitioning_type"),
-                    "subpartition_count": partition_info.get("def_subpartition_count"),
+                    "subpartition_type": partition_info.get("subpartitioning_type") if has_subpartitions else None,
+                    "subpartition_count": partition_info.get("def_subpartition_count") if has_subpartitions else None,
                 }
             )
 
