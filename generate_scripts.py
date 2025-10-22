@@ -665,8 +665,8 @@ class MigrationScriptGenerator:
             "migration_action": table_config.get("migration_action"),
             "migration_settings": table_config.get("migration_settings", {}),
             # Columns
+            "columns": table_config.get("columns", []),
             "column_list": ", ".join(all_columns) if all_columns else "*",
-            "column_definitions": table_config.get("column_definitions", "-- ERROR: Column definitions not found in config"),
             "primary_key_columns": target_config.get(
                 "partition_column", all_columns[0] if all_columns else "ID"
             ),
