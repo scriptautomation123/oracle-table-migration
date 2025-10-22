@@ -37,21 +37,16 @@ services:
     
     # Resource limits optimized for largest Codespace (32-core, 64GB RAM)
     # Allocate significant resources to Oracle for performance testing
+    # Note: Using memory limits only as CPU limits can cause issues in some environments
     deploy:
       resources:
         limits:
-          cpus: '16'
           memory: 32G
         reservations:
-          cpus: '8'
           memory: 16G
     
     # Shared memory for Oracle SGA - critical for performance
     shm_size: 8gb
-    
-    # Use tmpfs for better I/O performance on temp data
-    tmpfs:
-      - /dev/shm:rw,noexec,nosuid,size=8g
     
     networks:
       - oracle-network
@@ -77,10 +72,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '8'
           memory: 16G
         reservations:
-          cpus: '4'
           memory: 8G
     
     environment:
@@ -106,13 +99,7 @@ services:
 volumes:
   oracle-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /tmp/oracle-data
 
 networks:
   oracle-network:
     driver: bridge
-    driver_opts:
-      com.docker.network.driver.mtu: 1500
