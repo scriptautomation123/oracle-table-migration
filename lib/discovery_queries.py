@@ -213,22 +213,25 @@ class TableDiscovery:
         return columns
 
     def _get_table_sizes(self) -> Dict[str, float]:
-        """Get size in GB for all tables"""
+        """Get estimated size in GB for all tables using statistics"""
         cursor = self.connection.cursor()
 
+        # Use ALL_TAB_STATISTICS which is accessible with basic SELECT privileges
+        # Size estimation: num_rows * avg_row_len / (1024^3)
         query = """
-            SELECT segment_name, ROUND(SUM(bytes) / POWER(1024, 3), 2) AS size_gb
-            FROM all_segments
+            SELECT 
+                table_name,
+                ROUND(NVL(num_rows, 0) * NVL(avg_row_len, 0) / POWER(1024, 3), 2) AS estimated_gb
+            FROM all_tab_statistics
             WHERE owner = :schema
-              AND segment_type IN ('TABLE', 'TABLE PARTITION')
-            GROUP BY segment_name
+              AND NVL(num_rows, 0) > 0
         """
 
         cursor.execute(query, schema=self.schema)
 
         sizes = {}
         for row in cursor.fetchall():
-            sizes[row[0]] = row[1]
+            sizes[row[0]] = row[1] if row[1] > 0 else 0.01  # Minimum 0.01 GB for small tables
 
         cursor.close()
         return sizes

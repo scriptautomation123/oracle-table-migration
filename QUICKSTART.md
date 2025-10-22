@@ -479,3 +479,5 @@ hr/hr123@oracle:1521/XEPDB1
 ```
 
 Happy migrating! 🚀
+
+python generate_scripts.py --discover --schema MAV_OWNER --connection "nbk5k9e/SWAPchak0714@ECICMD03_SVC01"
