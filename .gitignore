@@ -1,0 +1,21 @@
+# Generated migration scripts (user-specific output)
+output/
+
+# Migration config (user-specific)
+migration_config.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,62 @@
+{#
+==================================================================
+Template: Master Script 2 (Jinja2)
+==================================================================
+Purpose: Execute steps 50-60 (cutover and cleanup)
+==================================================================
+#}
+-- ==================================================================
+-- MASTER SCRIPT 2: Cutover and Cleanup
+-- ==================================================================
+-- Table: {{ owner }}.{{ table_name }}
+-- Generated: {{ generation_date }}
+-- ==================================================================
+-- This script executes:
+--   Step 50: Swap tables (rename)
+--   Step 60: Restore grants
+--   Step 70: Drop old table (optional)
+-- ==================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON SIZE UNLIMITED
+SET TIMING ON
+SET FEEDBACK ON
+
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+
+PROMPT ================================================================
+PROMPT MASTER SCRIPT 2: Cutover and Cleanup
+PROMPT ================================================================
+PROMPT Table: {{ owner }}.{{ table_name }}
+PROMPT ================================================================
+PROMPT WARNING: This will swap the active table!
+PROMPT Press Ctrl+C to cancel, or press Enter to continue...
+PAUSE
+
+-- Execute Step 50: Swap tables
+@@ 50_swap_tables.sql
+
+-- Execute Step 60: Restore grants
+@@ 60_restore_grants.sql
+
+{% if drop_old_table %}
+-- Execute Step 70: Drop old table
+@@ 70_drop_old_table.sql
+{% else %}
+PROMPT
+PROMPT Skipping Step 70: Old table kept as {{ owner }}.{{ old_table_name }}
+PROMPT You can drop it later with: DROP TABLE {{ owner }}.{{ old_table_name }} PURGE;
+{% endif %}
+
+PROMPT
+PROMPT ================================================================
+PROMPT MASTER SCRIPT 2 COMPLETE
+PROMPT ================================================================
+PROMPT Status: SUCCESS ✓
+PROMPT Migration Complete!
+PROMPT ================================================================
+PROMPT New partitioned table: {{ owner }}.{{ table_name }}
+{%- if not drop_old_table %}
+PROMPT Backup table: {{ owner }}.{{ old_table_name }}
+{%- endif %}
+PROMPT ================================================================

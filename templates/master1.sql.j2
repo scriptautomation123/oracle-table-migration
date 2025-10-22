@@ -1,0 +1,58 @@
+{#
+==================================================================
+Template: Master Script 1 (Jinja2)
+==================================================================
+Purpose: Execute steps 10-40 (structure and initial load)
+==================================================================
+#}
+-- ==================================================================
+-- MASTER SCRIPT 1: Structure Creation and Initial Load
+-- ==================================================================
+-- Table: {{ owner }}.{{ table_name }}
+-- Generated: {{ generation_date }}
+-- ==================================================================
+-- This script executes:
+--   Step 10: Create new partitioned table
+--   Step 20: Initial data load
+--   Step 30: Create indexes
+--   Step 40: Delta load (optional)
+-- ==================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON SIZE UNLIMITED
+SET TIMING ON
+SET FEEDBACK ON
+
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+
+PROMPT ================================================================
+PROMPT MASTER SCRIPT 1: Structure and Initial Load
+PROMPT ================================================================
+PROMPT Table: {{ owner }}.{{ table_name }}
+PROMPT Target: {{ owner }}.{{ new_table_name }}
+PROMPT Size: {{ current_state.size_gb | format_size_gb }}
+PROMPT Rows: {{ current_state.row_count | format_row_count }}
+PROMPT Estimated Total Time: {{ (current_state.size_gb * 1.5) | estimate_time('load') }}
+PROMPT ================================================================
+
+-- Execute Step 10: Create table structure
+@@ 10_create_table.sql
+
+-- Execute Step 20: Initial data load  
+@@ 20_data_load.sql
+
+-- Execute Step 30: Create indexes
+@@ 30_create_indexes.sql
+
+{% if include_delta_load %}
+-- Execute Step 40: Delta load
+@@ 40_delta_load.sql
+{% endif %}
+
+PROMPT
+PROMPT ================================================================
+PROMPT MASTER SCRIPT 1 COMPLETE
+PROMPT ================================================================
+PROMPT Status: SUCCESS ✓
+PROMPT Next: Review results, then run master2.sql for cutover
+PROMPT ================================================================

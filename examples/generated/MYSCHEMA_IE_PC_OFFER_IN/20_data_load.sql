@@ -1,0 +1,346 @@
+-- ==================================================================
+-- DATA LOAD: MYSCHEMA.IE_PC_OFFER_IN -> MYSCHEMA.IE_PC_OFFER_IN_NEW
+-- ==================================================================
+-- Generated: 2025-10-22 01:30:55
+-- Estimated rows: 12,500,000
+-- Estimated size: 45.23 GB
+-- Estimated time: ~5.7 hours
+-- Parallel degree: 4
+-- ==================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON
+SET TIMING ON
+SET FEEDBACK ON
+SET VERIFY OFF
+
+PROMPT ================================================================
+PROMPT Step 20: Initial Data Load
+PROMPT ================================================================
+PROMPT Source: MYSCHEMA.IE_PC_OFFER_IN
+PROMPT Target: MYSCHEMA.IE_PC_OFFER_IN_NEW
+PROMPT Method: Parallel INSERT /*+ APPEND */
+PROMPT Parallel Degree: 4
+PROMPT Estimated Time: ~5.7 hours
+PROMPT ================================================================
+
+-- Variables for timing and counts
+VARIABLE v_start_time VARCHAR2(30)
+VARIABLE v_end_time VARCHAR2(30)
+VARIABLE v_source_count NUMBER
+VARIABLE v_target_count NUMBER
+VARIABLE v_batch_size NUMBER
+
+-- Record start time
+BEGIN
+    SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') INTO :v_start_time FROM dual;
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('Data load started at: ' || :v_start_time);
+    DBMS_OUTPUT.PUT_LINE('');
+END;
+/
+
+-- Get source row count
+PROMPT Counting source rows...
+
+BEGIN
+    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM MYSCHEMA.IE_PC_OFFER_IN'
+    INTO :v_source_count;
+    
+    DBMS_OUTPUT.PUT_LINE('Source table row count: ' || TO_CHAR(:v_source_count, '999,999,999,999'));
+    DBMS_OUTPUT.PUT_LINE('');    IF :v_source_count != 12500000 THEN
+        DBMS_OUTPUT.PUT_LINE('NOTE: Row count differs from discovery (12,500,000)');
+        DBMS_OUTPUT.PUT_LINE('      This is normal if data has changed since discovery');
+    END IF;EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('ERROR counting source rows: ' || SQLERRM);
+        RAISE;
+END;
+/
+
+-- Verify target table is empty
+PROMPT Verifying target table is empty...
+
+DECLARE
+    v_count NUMBER;
+BEGIN
+    SELECT COUNT(*) INTO v_count FROM MYSCHEMA.IE_PC_OFFER_IN_NEW;
+    
+    IF v_count > 0 THEN
+        DBMS_OUTPUT.PUT_LINE('WARNING: Target table has ' || v_count || ' rows!');
+        DBMS_OUTPUT.PUT_LINE('         Consider truncating before load');
+        RAISE_APPLICATION_ERROR(-20001, 'Target table is not empty');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('✓ Target table is empty - ready for load');
+    END IF;
+END;
+/
+
+-- Disable constraints on target (performance optimization)
+PROMPT
+PROMPT Disabling constraints on target table...
+
+DECLARE
+    v_constraint_count NUMBER := 0;
+BEGIN
+    FOR c IN (
+        SELECT constraint_name, constraint_type
+        FROM all_constraints
+        WHERE owner = 'MYSCHEMA'
+          AND table_name = 'IE_PC_OFFER_IN_NEW'
+          AND constraint_type IN ('U', 'P', 'R', 'C')
+          AND status = 'ENABLED'
+        ORDER BY 
+            CASE constraint_type
+                WHEN 'R' THEN 1  -- Foreign keys first
+                WHEN 'C' THEN 2  -- Check constraints
+                WHEN 'U' THEN 3  -- Unique
+                WHEN 'P' THEN 4  -- Primary key last
+            END
+    ) LOOP
+        BEGIN
+            EXECUTE IMMEDIATE 'ALTER TABLE MYSCHEMA.IE_PC_OFFER_IN_NEW DISABLE CONSTRAINT ' || c.constraint_name;
+            v_constraint_count := v_constraint_count + 1;
+            DBMS_OUTPUT.PUT_LINE('  Disabled ' || 
+                CASE c.constraint_type
+                    WHEN 'P' THEN 'PRIMARY KEY'
+                    WHEN 'U' THEN 'UNIQUE'
+                    WHEN 'R' THEN 'FOREIGN KEY'
+                    WHEN 'C' THEN 'CHECK'
+                END || ': ' || c.constraint_name);
+        EXCEPTION
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('  WARNING: Could not disable ' || c.constraint_name || ': ' || SQLERRM);
+        END;
+    END LOOP;
+    
+    IF v_constraint_count = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('  No constraints to disable');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('✓ Disabled ' || v_constraint_count || ' constraint(s)');
+    END IF;
+END;
+/
+
+-- Enable parallel DML
+ALTER SESSION ENABLE PARALLEL DML;
+ALTER SESSION SET PARALLEL_DEGREE_POLICY = MANUAL;
+
+PROMPT
+PROMPT ================================================================
+PROMPT Starting Data Load...
+PROMPT ================================================================
+PROMPT This may take ~5.7 hours depending on system load
+PROMPT Progress will be shown after completion
+PROMPT ================================================================
+
+-- Main data load with append hint
+INSERT /*+ APPEND PARALLEL(4) NOLOGGING */ 
+INTO MYSCHEMA.IE_PC_OFFER_IN_NEW
+(
+    AUDIT_CREATE_DATE, LAST_UPDATE_DATE, PROCESS_DATE, OFFER_ID, CUSTOMER_ID, SEQ_NUM, OFFER_CODE, STATUS
+)
+SELECT /*+ PARALLEL(4) */
+    AUDIT_CREATE_DATE, LAST_UPDATE_DATE, PROCESS_DATE, OFFER_ID, CUSTOMER_ID, SEQ_NUM, OFFER_CODE, STATUS
+FROM 
+    MYSCHEMA.IE_PC_OFFER_INORDER BY 
+    AUDIT_CREATE_DATE  -- Order by partition key for efficient loading;
+
+-- Record end time and commit
+BEGIN
+    SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') INTO :v_end_time FROM dual;
+END;
+/
+
+COMMIT;
+
+PROMPT
+PROMPT ✓ Data load completed and committed
+
+-- Verify row count match
+PROMPT
+PROMPT ================================================================
+PROMPT Verifying Data Load...
+PROMPT ================================================================
+
+DECLARE
+    v_duration_minutes NUMBER;
+    v_duration_hours NUMBER;
+    v_rows_per_sec NUMBER;
+    v_mb_per_sec NUMBER;
+    v_table_size_mb NUMBER;
+BEGIN
+    -- Get target count
+    SELECT COUNT(*) INTO :v_target_count FROM MYSCHEMA.IE_PC_OFFER_IN_NEW;
+    
+    -- Calculate duration
+    SELECT ROUND((TO_DATE(:v_end_time, 'YYYY-MM-DD HH24:MI:SS') - 
+                  TO_DATE(:v_start_time, 'YYYY-MM-DD HH24:MI:SS')) * 24 * 60, 2)
+    INTO v_duration_minutes FROM dual;
+    
+    v_duration_hours := ROUND(v_duration_minutes / 60, 2);
+    
+    -- Calculate throughput
+    IF v_duration_minutes > 0 THEN
+        v_rows_per_sec := ROUND(:v_target_count / (v_duration_minutes * 60), 0);
+        v_table_size_mb := 45.23 * 1024;
+        v_mb_per_sec := ROUND(v_table_size_mb / (v_duration_minutes * 60), 2);
+    ELSE
+        v_rows_per_sec := 0;
+        v_mb_per_sec := 0;
+    END IF;
+    
+    -- Display results
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('Data Load Summary:');
+    DBMS_OUTPUT.PUT_LINE('==================');
+    DBMS_OUTPUT.PUT_LINE('Source Rows:        ' || TO_CHAR(:v_source_count, '999,999,999,999'));
+    DBMS_OUTPUT.PUT_LINE('Target Rows:        ' || TO_CHAR(:v_target_count, '999,999,999,999'));
+    DBMS_OUTPUT.PUT_LINE('Difference:         ' || TO_CHAR(:v_source_count - :v_target_count, '999,999,999,999'));
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('Timing:');
+    DBMS_OUTPUT.PUT_LINE('-------');
+    DBMS_OUTPUT.PUT_LINE('Start Time:         ' || :v_start_time);
+    DBMS_OUTPUT.PUT_LINE('End Time:           ' || :v_end_time);
+    DBMS_OUTPUT.PUT_LINE('Duration:           ' || v_duration_minutes || ' minutes (' || v_duration_hours || ' hours)');
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('Throughput:');
+    DBMS_OUTPUT.PUT_LINE('-----------');
+    DBMS_OUTPUT.PUT_LINE('Rows/Second:        ' || TO_CHAR(v_rows_per_sec, '999,999,999'));
+    DBMS_OUTPUT.PUT_LINE('MB/Second:          ' || TO_CHAR(v_mb_per_sec, '999,999.99'));
+    DBMS_OUTPUT.PUT_LINE('Parallel Degree:    4');
+    DBMS_OUTPUT.PUT_LINE('');
+    
+    -- Validation
+    IF :v_source_count = :v_target_count THEN
+        DBMS_OUTPUT.PUT_LINE('✓✓✓ Row count MATCH - Data load SUCCESSFUL! ✓✓✓');
+    ELSIF :v_target_count > :v_source_count THEN
+        DBMS_OUTPUT.PUT_LINE('✗✗✗ ERROR: Target has MORE rows than source! ✗✗✗');
+        RAISE_APPLICATION_ERROR(-20002, 'Target row count exceeds source');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('✗✗✗ WARNING: Row count MISMATCH - ' || 
+            TO_CHAR(:v_source_count - :v_target_count) || ' rows missing! ✗✗✗');
+        RAISE_APPLICATION_ERROR(-20001, 'Row count mismatch detected');
+    END IF;
+    DBMS_OUTPUT.PUT_LINE('');
+END;
+/
+
+-- Gather statistics on loaded table
+PROMPT
+PROMPT Gathering statistics on target table...
+PROMPT (This may take several minutes for large tables)
+
+DECLARE
+    v_stats_start TIMESTAMP := SYSTIMESTAMP;
+    v_stats_end TIMESTAMP;
+    v_stats_duration NUMBER;
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => 'MYSCHEMA',
+        tabname => 'IE_PC_OFFER_IN_NEW',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        method_opt => 'FOR ALL COLUMNS SIZE AUTO',
+        degree => 4,
+        cascade => FALSE,
+        granularity => 'AUTO',  -- Partition and global stats
+        no_invalidate => FALSE
+    );
+    
+    v_stats_end := SYSTIMESTAMP;
+    v_stats_duration := EXTRACT(SECOND FROM (v_stats_end - v_stats_start));
+    
+    DBMS_OUTPUT.PUT_LINE('✓ Statistics gathered successfully');
+    DBMS_OUTPUT.PUT_LINE('  Duration: ' || ROUND(v_stats_duration, 2) || ' seconds');
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('WARNING: Statistics gathering failed: ' || SQLERRM);
+        DBMS_OUTPUT.PUT_LINE('         You may need to gather stats manually later');
+END;
+/
+-- Display partition distribution
+PROMPT
+PROMPT ================================================================
+PROMPT Partition Distribution Summary
+PROMPT ================================================================
+
+SELECT 
+    partition_name,
+subpartition_count,    num_rows,
+    blocks,
+    ROUND(num_rows * 100.0 / NULLIF(SUM(num_rows) OVER (), 0), 2) AS pct_of_total,
+    high_value
+FROM 
+    all_tab_partitions
+WHERE 
+    table_owner = 'MYSCHEMA'
+    AND table_name = 'IE_PC_OFFER_IN_NEW'
+ORDER BY 
+    partition_position DESC
+FETCH FIRST 10 ROWS ONLY;
+
+PROMPT
+PROMPT (Showing last 10 partitions - newest first)
+-- Re-enable constraints
+PROMPT
+PROMPT ================================================================
+PROMPT Re-enabling constraints...
+PROMPT ================================================================
+
+DECLARE
+    v_constraint_count NUMBER := 0;
+    v_failed_count NUMBER := 0;
+BEGIN
+    FOR c IN (
+        SELECT constraint_name, constraint_type
+        FROM all_constraints
+        WHERE owner = 'MYSCHEMA'
+          AND table_name = 'IE_PC_OFFER_IN_NEW'
+          AND constraint_type IN ('U', 'P', 'R', 'C')
+          AND status = 'DISABLED'
+        ORDER BY 
+            CASE constraint_type
+                WHEN 'P' THEN 1  -- Primary key first
+                WHEN 'U' THEN 2  -- Unique
+                WHEN 'C' THEN 3  -- Check
+                WHEN 'R' THEN 4  -- Foreign keys last
+            END
+    ) LOOP
+        BEGIN
+            EXECUTE IMMEDIATE 'ALTER TABLE MYSCHEMA.IE_PC_OFFER_IN_NEW ENABLE NOVALIDATE CONSTRAINT ' || c.constraint_name;
+            v_constraint_count := v_constraint_count + 1;
+            DBMS_OUTPUT.PUT_LINE('  ✓ Enabled ' || c.constraint_name);
+        EXCEPTION
+            WHEN OTHERS THEN
+                v_failed_count := v_failed_count + 1;
+                DBMS_OUTPUT.PUT_LINE('  ✗ Failed to enable ' || c.constraint_name || ': ' || SQLERRM);
+        END;
+    END LOOP;
+    
+    IF v_constraint_count > 0 THEN
+        DBMS_OUTPUT.PUT_LINE('');
+        DBMS_OUTPUT.PUT_LINE('✓ Re-enabled ' || v_constraint_count || ' constraint(s)');
+        IF v_failed_count > 0 THEN
+            DBMS_OUTPUT.PUT_LINE('✗ Failed to enable ' || v_failed_count || ' constraint(s)');
+            DBMS_OUTPUT.PUT_LINE('  Manual intervention may be required');
+        END IF;
+    END IF;
+END;
+/
+
+-- Final summary
+PROMPT
+PROMPT ================================================================
+PROMPT Step 20 Complete: Data Load SUCCESSFUL
+PROMPT ================================================================
+PROMPT Status: SUCCESS ✓
+PROMPT Source Rows: :v_source_count (use PRINT v_source_count to see value)
+PROMPT Target Rows: :v_target_count (use PRINT v_target_count to see value)
+PROMPT Start Time: :v_start_time
+PROMPT End Time: :v_end_time
+PROMPT
+PROMPT Next Steps:
+PROMPT   1. Run 30_create_indexes.sql to rebuild indexes
+PROMPT   2. Consider running 03_validation/data_comparison.sql
+PROMPT   3. Monitor partition growth
+PROMPT ================================================================

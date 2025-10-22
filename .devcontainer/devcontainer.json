@@ -1,0 +1,54 @@
+{
+  "name": "OCI Free Tier DB + Oracle Test Environment",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "workspace",
+  "workspaceFolder": "/workspace",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "Oracle.oracledevtools",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-oracle",
+        "wholroyd.jinja",
+        "redhat.vscode-yaml"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.provider": "black",
+        "editor.formatOnSave": true,
+        "files.associations": {
+          "*.sql.j2": "jinja-sql"
+        }
+      }
+    }
+  },
+  
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  
+  "forwardPorts": [1521, 5500],
+  "portsAttributes": {
+    "1521": {
+      "label": "Oracle Database",
+      "onAutoForward": "notify"
+    },
+    "5500": {
+      "label": "Oracle EM Express",
+      "onAutoForward": "silent"
+    }
+  },
+  
+  "remoteUser": "vscode"
+}

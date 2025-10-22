@@ -1,0 +1,41 @@
+{#
+==================================================================
+Template: Swap Tables (Jinja2)
+==================================================================
+Purpose: Swap old and new tables (rename operation)
+==================================================================
+#}
+-- ==================================================================
+-- SWAP TABLES: {{ owner }}.{{ table_name }} <-> {{ owner }}.{{ new_table_name }}
+-- ==================================================================
+-- Generated: {{ generation_date }}
+-- ==================================================================
+
+SET ECHO ON
+SET TIMING ON
+SET SERVEROUTPUT ON
+
+PROMPT ================================================================
+PROMPT Step 50: Swapping Tables
+PROMPT ================================================================
+PROMPT Old table: {{ owner }}.{{ table_name }}
+PROMPT New table: {{ owner }}.{{ new_table_name }}
+PROMPT Backup: {{ owner }}.{{ old_table_name }}
+PROMPT ================================================================
+
+-- Rename original table to _OLD
+ALTER TABLE {{ owner }}.{{ table_name }} RENAME TO {{ old_table_name }};
+PROMPT ✓ Renamed {{ table_name }} to {{ old_table_name }}
+
+-- Rename new table to original name
+ALTER TABLE {{ owner }}.{{ new_table_name }} RENAME TO {{ table_name }};
+PROMPT ✓ Renamed {{ new_table_name }} to {{ table_name }}
+
+-- Verify
+SELECT table_name, partitioned, status
+FROM all_tables
+WHERE owner = '{{ owner }}'
+  AND table_name IN ('{{ table_name }}', '{{ old_table_name }}')
+ORDER BY table_name;
+
+PROMPT ✓ Step 50 Complete: Tables swapped successfully

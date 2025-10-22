@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # Oracle Database XE 21c
+  oracle:
+    image: gvenzl/oracle-xe:21-slim-faststart
+    container_name: oracle-test-db
+    environment:
+      # System password
+      ORACLE_PASSWORD: Oracle123!
+      
+      # Create HR schema automatically
+      APP_USER: hr
+      APP_USER_PASSWORD: hr123
+      
+      # Create HR_APP schema via init script
+      ORACLE_DATABASE: XEPDB1
+    
+    ports:
+      - "1521:1521"
+      - "5500:5500"
+    
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./init-scripts:/docker-entrypoint-initdb.d/startup
+    
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    
+    shm_size: 1gb
+    
+    networks:
+      - oracle-network
+
+  # Workspace container
+  workspace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: workspace
+    
+    volumes:
+      - ..:/workspace:cached
+    
+    command: sleep infinity
+    
+    depends_on:
+      oracle:
+        condition: service_healthy
+    
+    environment:
+      ORACLE_HOST: oracle
+      ORACLE_PORT: 1521
+      ORACLE_SERVICE: XEPDB1
+      ORACLE_USER: hr
+      ORACLE_PASSWORD: hr123
+      ORACLE_SYS_PASSWORD: Oracle123!
+      TNS_ADMIN: /workspace/table_migration/wallets
+    
+    networks:
+      - oracle-network
+
+volumes:
+  oracle-data:
+    driver: local
+
+networks:
+  oracle-network:
+    driver: bridge

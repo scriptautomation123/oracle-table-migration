@@ -1,0 +1,43 @@
+{#
+==================================================================
+Template: Delta Load (Jinja2)
+==================================================================
+Purpose: Load incremental changes since initial load
+==================================================================
+#}
+-- ==================================================================
+-- DELTA LOAD: {{ owner }}.{{ new_table_name }}
+-- ==================================================================
+-- Generated: {{ generation_date }}
+-- Captures changes since: {{ cutoff_timestamp }}
+-- ==================================================================
+
+SET ECHO ON
+SET TIMING ON
+SET SERVEROUTPUT ON
+
+PROMPT ================================================================
+PROMPT Step 40: Delta Load (Incremental Changes)
+PROMPT ================================================================
+PROMPT Source: {{ owner }}.{{ table_name }}
+PROMPT Target: {{ owner }}.{{ new_table_name }}
+PROMPT Cutoff: {{ cutoff_timestamp }}
+PROMPT ================================================================
+
+-- Merge incremental changes
+MERGE {{ target_configuration.parallel_degree | parallel_hint }} INTO {{ owner }}.{{ new_table_name }} tgt
+USING (
+    SELECT {{ column_list }}
+    FROM {{ owner }}.{{ table_name }}
+    WHERE {{ target_configuration.partition_column }} >= TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS')
+) src
+ON ({{ primary_key_columns | match_condition('tgt', 'src') }})
+WHEN MATCHED THEN
+    UPDATE SET {{ update_set_clause }}
+WHEN NOT MATCHED THEN
+    INSERT ({{ column_list }})
+    VALUES ({{ column_list | format_column_list('src.') }});
+
+COMMIT;
+
+PROMPT ✓ Step 40 Complete: Delta load finished

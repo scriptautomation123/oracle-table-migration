@@ -1,0 +1,39 @@
+{#
+==================================================================
+Template: Drop Old Table (Jinja2)
+==================================================================
+Purpose: Drop old table after successful migration
+==================================================================
+#}
+-- ==================================================================
+-- DROP OLD TABLE: {{ owner }}.{{ old_table_name }}
+-- ==================================================================
+-- Generated: {{ generation_date }}
+-- WARNING: This is IRREVERSIBLE!
+-- ==================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON
+
+PROMPT ================================================================
+PROMPT Step 70: Drop Old Table (CAUTION)
+PROMPT ================================================================
+PROMPT Table to drop: {{ owner }}.{{ old_table_name }}
+PROMPT ================================================================
+PROMPT
+PROMPT WARNING: This will PERMANENTLY delete the old table!
+PROMPT Press Ctrl+C to cancel, or press Enter to continue...
+PAUSE
+
+-- Drop the old table
+DROP TABLE {{ owner }}.{{ old_table_name }} PURGE;
+
+PROMPT ✓ Table {{ owner }}.{{ old_table_name }} dropped successfully
+
+-- Verify it's gone
+SELECT COUNT(*) AS old_table_exists
+FROM all_tables
+WHERE owner = '{{ owner }}'
+  AND table_name = '{{ old_table_name }}';
+
+PROMPT ✓ Step 70 Complete: Old table removed

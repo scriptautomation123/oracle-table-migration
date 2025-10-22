@@ -1,0 +1,38 @@
+{#
+==================================================================
+Template: Create Indexes (Jinja2)
+==================================================================
+Purpose: Recreate indexes on new partitioned table
+==================================================================
+#}
+-- ==================================================================
+-- CREATE INDEXES: {{ owner }}.{{ new_table_name }}
+-- ==================================================================
+-- Generated: {{ generation_date }}
+-- Source: {{ owner }}.{{ table_name }}
+-- Index count: {{ current_state.index_count }}
+-- Parallel degree: {{ target_configuration.parallel_degree }}
+-- ==================================================================
+
+SET ECHO ON
+SET TIMING ON
+SET SERVEROUTPUT ON
+
+PROMPT ================================================================
+PROMPT Step 30: Creating Indexes
+PROMPT ================================================================
+PROMPT Target: {{ owner }}.{{ new_table_name }}
+PROMPT Indexes to create: {{ current_state.index_count }}
+PROMPT Estimated time: {{ (current_state.size_gb * 0.15) | estimate_time('index') }}
+PROMPT ================================================================
+
+-- Enable parallel DDL
+ALTER SESSION FORCE PARALLEL DDL PARALLEL {{ target_configuration.parallel_degree }};
+
+-- Index definitions will be generated dynamically
+{{ index_definitions }}
+
+-- Reset parallel settings
+ALTER SESSION FORCE PARALLEL DDL;
+
+PROMPT ✓ Step 30 Complete: {{ current_state.index_count }} index(es) created

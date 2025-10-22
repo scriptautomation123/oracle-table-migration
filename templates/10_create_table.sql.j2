@@ -1,0 +1,308 @@
+{#
+==================================================================
+Template: Create New Interval-Hash Partitioned Table (Jinja2)
+==================================================================
+Purpose: Creates new table with INTERVAL-HASH partitioning
+         Supports both conversion and new partitioning
+
+Context Variables:
+  owner                    - Table owner/schema
+  table_name              - Original table name  
+  new_table_name          - New table name
+  target_configuration    - Target partition config dict
+    - partition_type      - INTERVAL or RANGE
+    - partition_column    - Column to partition on
+    - interval_type       - HOUR, DAY, WEEK, MONTH
+    - interval_value      - Interval value (e.g., 1)
+    - subpartition_type   - HASH or NONE
+    - subpartition_column - Column to subpartition on
+    - subpartition_count  - Number of hash subpartitions
+    - tablespace          - Tablespace name
+    - parallel_degree     - Parallel degree
+    - initial_partition_value - Initial partition boundary
+  column_definitions      - Column definitions string
+  lob_columns            - List of LOB columns (if any)
+  current_state          - Current table state dict
+  migration_action       - Type of migration
+==================================================================
+#}
+-- ==================================================================
+-- CREATE TABLE: {{ owner }}.{{ new_table_name }}
+-- ==================================================================
+-- Generated: {{ generation_date }}
+-- Migration Action: {{ migration_action }}
+-- Source Table: {{ owner }}.{{ table_name }}
+{%- if current_state.is_partitioned %}
+-- Current Partitioning: {{ current_state.partition_type }}{% if current_state.is_interval %} (INTERVAL){% endif %}
+{%- else %}
+-- Current: Non-partitioned table
+{%- endif %}
+-- Target Partitioning: {{ target_configuration.partition_type }}{% if target_configuration.subpartition_type == 'HASH' %}-{{ target_configuration.subpartition_type }}{% endif %}
+-- ==================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON
+SET TIMING ON
+SET FEEDBACK ON
+
+PROMPT ================================================================
+PROMPT Step 10: Creating New Partitioned Table
+PROMPT ================================================================
+PROMPT Table: {{ owner }}.{{ new_table_name }}
+{%- if target_configuration.partition_type == 'INTERVAL' %}
+PROMPT Partitioning: INTERVAL ({{ target_configuration.interval_type }})
+{%- else %}
+PROMPT Partitioning: {{ target_configuration.partition_type }}
+{%- endif %}
+PROMPT Partition Column: {{ target_configuration.partition_column }}
+{%- if target_configuration.subpartition_type == 'HASH' %}
+PROMPT Subpartitioning: HASH on {{ target_configuration.subpartition_column }}
+PROMPT Hash Subpartitions: {{ target_configuration.subpartition_count }}
+{%- else %}
+PROMPT Subpartitioning: NONE
+{%- endif %}
+PROMPT Tablespace: {{ target_configuration.tablespace }}
+{%- if current_state.lob_count > 0 %}
+PROMPT LOB Columns: {{ current_state.lob_count }}
+{%- endif %}
+PROMPT ================================================================
+
+-- Drop table if exists (safety check)
+DECLARE
+    v_count NUMBER;
+BEGIN
+    SELECT COUNT(*) INTO v_count
+    FROM all_tables
+    WHERE owner = '{{ owner }}'
+      AND table_name = '{{ new_table_name }}';
+    
+    IF v_count > 0 THEN
+        EXECUTE IMMEDIATE 'DROP TABLE {{ owner }}.{{ new_table_name }} PURGE';
+        DBMS_OUTPUT.PUT_LINE('✓ Dropped existing table {{ owner }}.{{ new_table_name }}');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('✓ Table {{ owner }}.{{ new_table_name }} does not exist - proceeding with creation');
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('ERROR: ' || SQLERRM);
+        RAISE;
+END;
+/
+
+-- Create new table with partitioning
+PROMPT
+PROMPT Creating table {{ owner }}.{{ new_table_name }}...
+PROMPT Estimated time: {{ current_state.size_gb | estimate_time('load') }}
+
+CREATE TABLE {{ owner }}.{{ new_table_name }}
+(
+{{ column_definitions }}
+)
+TABLESPACE {{ target_configuration.tablespace }}
+{%- if lob_columns and lob_columns | length > 0 %}
+-- LOB Storage Clauses
+{{ lob_columns | lob_storage(target_configuration.tablespace) }}
+{%- endif %}
+{%- if target_configuration.partition_type == 'INTERVAL' %}
+PARTITION BY RANGE ({{ target_configuration.partition_column }})
+{%- if target_configuration.interval_type %}
+INTERVAL ({{ target_configuration.interval_type | format_interval(target_configuration.interval_value) }})
+{%- endif %}
+{%- if target_configuration.subpartition_type == 'HASH' %}
+SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
+SUBPARTITIONS {{ target_configuration.subpartition_count }}
+{%- if not is_power_of_2(target_configuration.subpartition_count) %}
+-- WARNING: Subpartition count ({{ target_configuration.subpartition_count }}) is not a power of 2
+-- Recommended values: 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024
+{%- endif %}
+{%- endif %}
+(
+    PARTITION p_initial VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
+)
+{%- elif target_configuration.partition_type == 'RANGE' %}
+-- RANGE partitioning (without INTERVAL)
+PARTITION BY RANGE ({{ target_configuration.partition_column }})
+{%- if target_configuration.subpartition_type == 'HASH' %}
+SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }})
+SUBPARTITIONS {{ target_configuration.subpartition_count }}
+{%- endif %}
+(
+    PARTITION p_initial VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
+)
+{%- endif %}
+ENABLE ROW MOVEMENT
+{%- if target_configuration.parallel_degree > 1 %}
+PARALLEL {{ target_configuration.parallel_degree }}
+{%- else %}
+NOPARALLEL
+{%- endif %};
+
+PROMPT ✓ Table {{ owner }}.{{ new_table_name }} created successfully
+
+-- Verify table creation
+PROMPT
+PROMPT Verifying table structure...
+
+SELECT 
+    table_name,
+    tablespace_name,
+    partitioned,
+    status,
+    num_rows,
+    blocks
+FROM 
+    all_tables
+WHERE 
+    owner = '{{ owner }}'
+    AND table_name = '{{ new_table_name }}';
+
+{%- if target_configuration.partition_type in ['INTERVAL', 'RANGE'] %}
+
+-- Verify partitioning configuration
+PROMPT
+PROMPT Verifying partitioning configuration...
+
+SELECT 
+    table_name,
+    partitioning_type,
+    subpartitioning_type,
+    partition_count,
+    def_subpartition_count,
+    interval,
+    CASE WHEN interval IS NOT NULL THEN 'YES' ELSE 'NO' END as is_interval
+FROM 
+    all_part_tables
+WHERE 
+    owner = '{{ owner }}'
+    AND table_name = '{{ new_table_name }}';
+
+-- Show partition key columns
+PROMPT
+PROMPT Partition key columns:
+
+SELECT 
+    column_name,
+    column_position,
+    object_type
+FROM 
+    all_part_key_columns
+WHERE 
+    owner = '{{ owner }}'
+    AND name = '{{ new_table_name }}'
+ORDER BY 
+    column_position;
+
+{%- endif %}
+
+{%- if current_state.lob_count > 0 %}
+
+-- Verify LOB columns configuration
+PROMPT
+PROMPT Verifying LOB column configuration...
+
+SELECT 
+    column_name,
+    segment_name,
+    tablespace_name,
+    securefile,
+    compression,
+    deduplication,
+    in_row,
+    chunk,
+    cache
+FROM 
+    all_lobs
+WHERE 
+    owner = '{{ owner }}'
+    AND table_name = '{{ new_table_name }}'
+ORDER BY 
+    column_name;
+
+{%- endif %}
+
+-- Gather initial statistics
+PROMPT
+PROMPT Gathering initial statistics...
+
+DECLARE
+    v_start_time TIMESTAMP := SYSTIMESTAMP;
+    v_end_time TIMESTAMP;
+    v_duration INTERVAL DAY TO SECOND;
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => '{{ owner }}',
+        tabname => '{{ new_table_name }}',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        method_opt => 'FOR ALL COLUMNS SIZE AUTO',
+        degree => {{ target_configuration.parallel_degree }},
+        cascade => FALSE
+    );
+    
+    v_end_time := SYSTIMESTAMP;
+    v_duration := v_end_time - v_start_time;
+    
+    DBMS_OUTPUT.PUT_LINE('✓ Statistics gathered successfully');
+    DBMS_OUTPUT.PUT_LINE('  Duration: ' || TO_CHAR(EXTRACT(SECOND FROM v_duration), '999.99') || ' seconds');
+END;
+/
+
+-- Display table info
+PROMPT
+PROMPT Table Information:
+PROMPT ==================
+
+DECLARE
+    v_table_exists NUMBER;
+    v_partitioned VARCHAR2(3);
+    v_part_type VARCHAR2(30);
+    v_subpart_type VARCHAR2(30);
+    v_interval VARCHAR2(1000);
+BEGIN
+    SELECT COUNT(*) INTO v_table_exists
+    FROM all_tables
+    WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
+    
+    IF v_table_exists = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('ERROR: Table was not created successfully!');
+        RAISE_APPLICATION_ERROR(-20001, 'Table creation failed');
+    END IF;
+    
+    SELECT partitioned INTO v_partitioned
+    FROM all_tables
+    WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
+    
+    DBMS_OUTPUT.PUT_LINE('Table Name: {{ owner }}.{{ new_table_name }}');
+    DBMS_OUTPUT.PUT_LINE('Tablespace: {{ target_configuration.tablespace }}');
+    DBMS_OUTPUT.PUT_LINE('Partitioned: ' || v_partitioned);
+    
+    IF v_partitioned = 'YES' THEN
+        SELECT partitioning_type, subpartitioning_type, NVL(interval, 'N/A')
+        INTO v_part_type, v_subpart_type, v_interval
+        FROM all_part_tables
+        WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
+        
+        DBMS_OUTPUT.PUT_LINE('Partition Type: ' || v_part_type);
+        DBMS_OUTPUT.PUT_LINE('Subpartition Type: ' || NVL(v_subpart_type, 'NONE'));
+        DBMS_OUTPUT.PUT_LINE('Interval: ' || v_interval);
+    END IF;
+    
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('✓ Table created and verified successfully!');
+END;
+/
+
+PROMPT
+PROMPT ================================================================
+PROMPT Step 10 Complete: Table Structure Created
+PROMPT ================================================================
+PROMPT Status: SUCCESS
+PROMPT Table: {{ owner }}.{{ new_table_name }}
+{%- if target_configuration.partition_type == 'INTERVAL' %}
+PROMPT Partitioning: INTERVAL-{% if target_configuration.subpartition_type == 'HASH' %}HASH{% else %}ONLY{% endif %}
+{%- endif %}
+PROMPT
+PROMPT Next Steps:
+PROMPT   1. Review table structure above
+PROMPT   2. Run 20_data_load.sql to load data (est. {{ current_state.size_gb | estimate_time('load') }})
+PROMPT   3. Monitor space and performance
+PROMPT ================================================================

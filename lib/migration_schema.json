@@ -1,0 +1,304 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/migration-config.schema.json",
+  "title": "Oracle Table Migration Configuration",
+  "description": "Configuration schema for Oracle table migration from interval to interval-hash partitioning",
+  "type": "object",
+  "required": ["metadata", "tables"],
+  
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Metadata about the migration configuration",
+      "required": ["generated_date", "schema"],
+      "properties": {
+        "generated_date": {
+          "type": "string",
+          "description": "Date and time when configuration was generated",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"
+        },
+        "schema": {
+          "type": "string",
+          "description": "Oracle schema name",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "discovery_criteria": {
+          "type": "string",
+          "description": "Criteria used for table discovery"
+        },
+        "total_tables_found": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of tables discovered"
+        },
+        "tables_selected_for_migration": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tables enabled for migration"
+        }
+      }
+    },
+    
+    "tables": {
+      "type": "array",
+      "description": "Array of table configurations",
+      "items": {
+        "$ref": "#/definitions/table_config"
+      }
+    }
+  },
+  
+  "definitions": {
+    "table_config": {
+      "type": "object",
+      "required": ["enabled", "owner", "table_name", "current_state", "migration_action", "target_configuration"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this table should be migrated"
+        },
+        
+        "owner": {
+          "type": "string",
+          "description": "Table owner (schema)",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        
+        "table_name": {
+          "type": "string",
+          "description": "Table name",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        
+        "current_state": {
+          "type": "object",
+          "description": "Current table state",
+          "required": ["is_partitioned", "partition_type", "size_gb", "row_count"],
+          "properties": {
+            "is_partitioned": {
+              "type": "boolean",
+              "description": "Whether table is currently partitioned"
+            },
+            "partition_type": {
+              "type": "string",
+              "enum": ["NONE", "RANGE", "LIST", "HASH", "REFERENCE", "SYSTEM"],
+              "description": "Current partition type"
+            },
+            "is_interval": {
+              "type": "boolean",
+              "description": "Whether table uses interval partitioning"
+            },
+            "interval_definition": {
+              "type": ["string", "null"],
+              "description": "Current interval definition (Oracle syntax)"
+            },
+            "current_partition_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of existing partitions"
+            },
+            "current_partition_key": {
+              "type": ["string", "null"],
+              "description": "Current partition key column(s)"
+            },
+            "has_subpartitions": {
+              "type": "boolean",
+              "description": "Whether table has subpartitions"
+            },
+            "subpartition_type": {
+              "type": ["string", "null"],
+              "enum": ["HASH", "LIST", "RANGE", null],
+              "description": "Current subpartition type"
+            },
+            "subpartition_count": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "description": "Number of subpartitions per partition"
+            },
+            "size_gb": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Table size in GB"
+            },
+            "row_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Approximate row count"
+            },
+            "lob_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of LOB columns"
+            },
+            "index_count": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of indexes"
+            }
+          }
+        },
+        
+        "available_columns": {
+          "type": "object",
+          "description": "Available columns for partitioning",
+          "properties": {
+            "timestamp_columns": {
+              "type": "array",
+              "description": "Columns suitable for interval partitioning",
+              "items": {
+                "$ref": "#/definitions/column_info"
+              }
+            },
+            "numeric_columns": {
+              "type": "array",
+              "description": "Numeric columns suitable for hash partitioning",
+              "items": {
+                "$ref": "#/definitions/column_info"
+              }
+            },
+            "string_columns": {
+              "type": "array",
+              "description": "String columns suitable for hash partitioning",
+              "items": {
+                "$ref": "#/definitions/column_info"
+              }
+            }
+          }
+        },
+        
+        "migration_action": {
+          "type": "string",
+          "enum": [
+            "convert_interval_to_interval_hash",
+            "add_interval_hash_partitioning",
+            "add_interval_partitioning",
+            "add_hash_subpartitions",
+            "convert_to_interval_hash"
+          ],
+          "description": "Type of migration action to perform"
+        },
+        
+        "target_configuration": {
+          "type": "object",
+          "description": "Target partition configuration",
+          "required": ["partition_type", "partition_column"],
+          "properties": {
+            "partition_type": {
+              "type": "string",
+              "enum": ["INTERVAL", "RANGE"],
+              "description": "Target partition type"
+            },
+            
+            "partition_column": {
+              "type": ["string", "null"],
+              "description": "Column to partition on",
+              "pattern": "^[A-Z][A-Z0-9_$#]*$"
+            },
+            
+            "interval_type": {
+              "type": "string",
+              "enum": ["HOUR", "DAY", "WEEK", "MONTH"],
+              "description": "Interval granularity"
+            },
+            
+            "interval_value": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 999,
+              "description": "Interval value (e.g., 1 for 1 month)"
+            },
+            
+            "initial_partition_value": {
+              "type": "string",
+              "description": "Initial partition boundary (Oracle TO_DATE format)",
+              "pattern": "^TO_DATE\\('.*', '.*'\\)$"
+            },
+            
+            "subpartition_type": {
+              "type": "string",
+              "enum": ["HASH", "NONE"],
+              "description": "Subpartition type"
+            },
+            
+            "subpartition_column": {
+              "type": ["string", "null"],
+              "description": "Column to subpartition on",
+              "pattern": "^[A-Z][A-Z0-9_$#]*$"
+            },
+            
+            "subpartition_count": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024,
+              "description": "Number of hash subpartitions (power of 2 recommended)"
+            },
+            
+            "tablespace": {
+              "type": "string",
+              "description": "Tablespace name",
+              "pattern": "^[A-Z][A-Z0-9_$#]*$"
+            },
+            
+            "parallel_degree": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 128,
+              "description": "Parallel degree for migration operations"
+            }
+          }
+        },
+        
+        "migration_settings": {
+          "type": "object",
+          "description": "Migration execution settings",
+          "properties": {
+            "estimated_hours": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Estimated migration time in hours"
+            },
+            "priority": {
+              "type": "string",
+              "enum": ["HIGH", "MEDIUM", "LOW"],
+              "description": "Migration priority"
+            },
+            "validate_data": {
+              "type": "boolean",
+              "description": "Whether to validate data after migration"
+            },
+            "backup_old_table": {
+              "type": "boolean",
+              "description": "Whether to keep old table as backup"
+            },
+            "drop_old_after_days": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Days to wait before dropping old table (0 = immediate)"
+            }
+          }
+        }
+      }
+    },
+    
+    "column_info": {
+      "type": "object",
+      "required": ["name", "type", "nullable"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Column name",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Oracle data type"
+        },
+        "nullable": {
+          "type": "string",
+          "enum": ["Y", "N"],
+          "description": "Whether column allows NULL"
+        }
+      }
+    }
+  }
+}
