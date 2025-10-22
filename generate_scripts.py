@@ -58,6 +58,13 @@ except ImportError:
 # Oracle connection
 try:
     import oracledb
+    # Enable thick mode for TNS/OID support
+    try:
+        oracledb.init_oracle_client()
+        print("Oracle thick mode enabled (Instant Client)")
+    except Exception as e:
+        print(f"WARNING: Could not initialize Oracle Client (thick mode): {e}")
+        print("Falling back to thin mode - TNS names and OID may not work")
 except ImportError:
     try:
         import cx_Oracle as oracledb
