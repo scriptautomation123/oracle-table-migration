@@ -36,6 +36,9 @@ ALTER SESSION FORCE PARALLEL DDL PARALLEL {{ target_configuration.parallel_degre
 PROMPT Creating index {{ idx.index_name }}_NEW...
 CREATE {% if idx.uniqueness == 'UNIQUE' %}UNIQUE {% endif %}INDEX "{{ owner }}"."{{ idx.index_name }}_NEW"
 ON "{{ owner }}"."{{ new_table_name }}" ({{ idx.columns }})
+{%- if idx.visibility and idx.visibility == 'INVISIBLE' %}
+INVISIBLE
+{%- endif %}
 {%- if idx.compression == 'ENABLED' %}
 {%- if idx.prefix_length and idx.prefix_length > 0 %}
 COMPRESS {{ idx.prefix_length }}

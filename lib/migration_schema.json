@@ -5,7 +5,7 @@
   "description": "Configuration schema for Oracle table migration from interval to interval-hash partitioning",
   "type": "object",
   "required": ["metadata", "tables"],
-  
+
   "properties": {
     "metadata": {
       "type": "object",
@@ -38,7 +38,7 @@
         }
       }
     },
-    
+
     "tables": {
       "type": "array",
       "description": "Array of table configurations",
@@ -47,7 +47,7 @@
       }
     }
   },
-  
+
   "definitions": {
     "table_config": {
       "type": "object",
@@ -57,24 +57,24 @@
           "type": "boolean",
           "description": "Whether this table should be migrated"
         },
-        
+
         "owner": {
           "type": "string",
           "description": "Table owner (schema)",
           "pattern": "^[A-Z][A-Z0-9_$#]*$"
         },
-        
+
         "table_name": {
           "type": "string",
           "description": "Table name",
           "pattern": "^[A-Z][A-Z0-9_$#]*$"
         },
-        
+
         "column_definitions": {
           "type": "string",
           "description": "Complete DDL column definitions for CREATE TABLE statement"
         },
-        
+
         "lob_storage": {
           "type": "array",
           "description": "LOB storage configuration details",
@@ -82,12 +82,12 @@
             "type": "object"
           }
         },
-        
+
         "storage_parameters": {
           "type": "object",
           "description": "Table storage parameters (compression, pctfree, etc.)"
         },
-        
+
         "indexes": {
           "type": "array",
           "description": "Index definitions with columns and storage",
@@ -95,7 +95,7 @@
             "type": "object"
           }
         },
-        
+
         "current_state": {
           "type": "object",
           "description": "Current table state",
@@ -163,7 +163,7 @@
             }
           }
         },
-        
+
         "available_columns": {
           "type": "object",
           "description": "Available columns for partitioning",
@@ -191,7 +191,7 @@
             }
           }
         },
-        
+
         "migration_action": {
           "type": "string",
           "enum": [
@@ -203,7 +203,7 @@
           ],
           "description": "Type of migration action to perform"
         },
-        
+
         "target_configuration": {
           "type": "object",
           "description": "Target partition configuration",
@@ -214,57 +214,57 @@
               "enum": ["INTERVAL", "RANGE"],
               "description": "Target partition type"
             },
-            
+
             "partition_column": {
               "type": ["string", "null"],
               "description": "Column to partition on",
               "pattern": "^[A-Z][A-Z0-9_$#]*$"
             },
-            
+
             "interval_type": {
               "type": "string",
               "enum": ["HOUR", "DAY", "WEEK", "MONTH"],
               "description": "Interval granularity"
             },
-            
+
             "interval_value": {
               "type": "integer",
               "minimum": 1,
               "maximum": 999,
               "description": "Interval value (e.g., 1 for 1 month)"
             },
-            
+
             "initial_partition_value": {
               "type": "string",
               "description": "Initial partition boundary (Oracle TO_DATE format)",
               "pattern": "^TO_DATE\\('.*', '.*'\\)$"
             },
-            
+
             "subpartition_type": {
               "type": "string",
               "enum": ["HASH", "NONE"],
               "description": "Subpartition type"
             },
-            
+
             "subpartition_column": {
               "type": ["string", "null"],
               "description": "Column to subpartition on",
               "pattern": "^[A-Z][A-Z0-9_$#]*$"
             },
-            
+
             "subpartition_count": {
               "type": "integer",
               "minimum": 1,
               "maximum": 1024,
               "description": "Number of hash subpartitions (power of 2 recommended)"
             },
-            
+
             "tablespace": {
               "type": "string",
               "description": "Tablespace name",
               "pattern": "^[A-Z][A-Z0-9_$#]*$"
             },
-            
+
             "parallel_degree": {
               "type": "integer",
               "minimum": 1,
@@ -273,7 +273,7 @@
             }
           }
         },
-        
+
         "migration_settings": {
           "type": "object",
           "description": "Migration execution settings",
@@ -305,7 +305,7 @@
         }
       }
     },
-    
+
     "column_info": {
       "type": "object",
       "required": ["name", "type", "nullable"],

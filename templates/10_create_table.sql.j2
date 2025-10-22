@@ -124,7 +124,30 @@ STORAGE (
 {%- endif %}
 {%- if lob_storage and lob_storage | length > 0 %}
 {%- for lob in lob_storage %}
-LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }} (TABLESPACE {{ lob.tablespace_name | default(target_configuration.tablespace) }})
+LOB ({{ lob.column_name }}) STORE AS {%- if lob.securefile == 'YES' %} SECUREFILE{%- else %} BASICFILE{%- endif %} {{ lob.segment_name }} (
+    TABLESPACE {{ lob.tablespace_name | default(target_configuration.tablespace) }}
+{%- if lob.in_row %}
+    {%- if lob.in_row == 'YES' %}
+    ENABLE STORAGE IN ROW
+    {%- else %}
+    DISABLE STORAGE IN ROW
+    {%- endif %}
+{%- endif %}
+{%- if lob.chunk %}
+    CHUNK {{ lob.chunk }}
+{%- endif %}
+{%- if lob.cache %}
+    {%- if lob.cache == 'YES' %}CACHE{%- else %}NOCACHE{%- endif %}
+{%- endif %}
+{%- if lob.securefile == 'YES' %}
+    {%- if lob.compression %}
+    {%- if lob.compression == 'ENABLED' %}COMPRESS{%- else %}NOCOMPRESS{%- endif %}
+    {%- endif %}
+    {%- if lob.deduplication %}
+    {%- if lob.deduplication == 'ENABLED' %}DEDUPLICATE{%- else %}KEEP_DUPLICATES{%- endif %}
+    {%- endif %}
+{%- endif %}
+)
 {%- endfor %}
 {%- endif %}
 {%- if target_configuration.partition_type == 'INTERVAL' %}

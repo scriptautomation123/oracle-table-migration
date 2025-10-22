@@ -34,12 +34,9 @@ class TableDiscovery:
         self.tables = []
         self.metadata = {}
 
-    def discover_schema(
-        self,
-        schema_name: str,
-        include_patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None,
-    ) -> Dict:
+    def discover_schema(self, schema_name: str,
+                       include_patterns: Optional[List[str]] = None,
+                       exclude_patterns: Optional[List[str]] = None) -> Dict:
         """
         Discover all tables in schema and generate JSON configuration
 
@@ -86,66 +83,58 @@ class TableDiscovery:
                 table_sizes.get(table_name, 0),
                 table_stats.get(table_name, {}),
                 lob_counts.get(table_name, 0),
-                index_counts.get(table_name, 0),
+                index_counts.get(table_name, 0)
             )
             tables_config.append(table_config)
             print(f"  • {table_name}: {table_config['migration_action']}")
 
         # Step 6: Generate metadata
         self.metadata = {
-            "generated_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             "schema": self.schema,
-            "discovery_criteria": self._format_criteria(
-                include_patterns, exclude_patterns
-            ),
+            "discovery_criteria": self._format_criteria(include_patterns, exclude_patterns),
             "total_tables_found": len(all_tables),
-            "tables_selected_for_migration": len(
-                [t for t in tables_config if t["enabled"]]
-            ),
+            "tables_selected_for_migration": len([t for t in tables_config if t['enabled']])
         }
 
-        config = {"metadata": self.metadata, "tables": tables_config}
+        config = {
+            "metadata": self.metadata,
+            "tables": tables_config
+        }
 
-        print("\n" + "=" * 70)
+        print(f"\n{'='*70}")
         print("Discovery complete!")
         print(f"  Total tables: {len(all_tables)}")
-        print(
-            f"  Enabled for migration: {self.metadata['tables_selected_for_migration']}"
-        )
-        print("=" * 70 + "\n")
+        print(f"  Enabled for migration: {self.metadata['tables_selected_for_migration']}")
+        print(f"{'='*70}\n")
 
         return config
 
-    def _get_all_tables(
-        self,
-        include_patterns: Optional[List[str]] = None,
-        exclude_patterns: Optional[List[str]] = None,
-    ) -> List[str]:
+    def _get_all_tables(self, include_patterns: Optional[List[str]] = None,
+                       exclude_patterns: Optional[List[str]] = None) -> List[str]:
         """Get list of all table names in schema"""
         cursor = self.connection.cursor()
 
         # Build WHERE clause with patterns
         where_clauses = ["owner = :schema"]
-        params = {"schema": self.schema}
+        params = {'schema': self.schema}
 
         if include_patterns:
-            include_clause = " OR ".join(
-                [f"table_name LIKE :inc_{i}" for i in range(len(include_patterns))]
-            )
+            include_clause = " OR ".join([f"table_name LIKE :inc_{i}" for i in range(len(include_patterns))])
             where_clauses.append(f"({include_clause})")
             for i, pattern in enumerate(include_patterns):
-                params[f"inc_{i}"] = pattern.upper()
+                params[f'inc_{i}'] = pattern.upper()
 
         if exclude_patterns:
             for i, pattern in enumerate(exclude_patterns):
                 where_clauses.append(f"table_name NOT LIKE :exc_{i}")
-                params[f"exc_{i}"] = pattern.upper()
+                params[f'exc_{i}'] = pattern.upper()
 
         # Build query with dynamic WHERE clause from trusted list
         # SQL injection is prevented by:
         # 1. where_clauses contains only internally generated strings (not user input)
         # 2. All user values are passed via bind variables (params)
-        where_clause = " AND ".join(where_clauses)
+        where_clause = ' AND '.join(where_clauses)
         query = f"""
             SELECT table_name
             FROM all_tables
@@ -160,11 +149,11 @@ class TableDiscovery:
         return tables
 
     def _get_partition_info(self) -> Dict[str, Dict]:
-        """Get partition information for all partitioned tables"""
+        """Get partition information for all partitioned tables (Oracle 19c+)"""
         cursor = self.connection.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 t.table_name,
                 t.partitioning_type,
                 t.subpartitioning_type,
@@ -185,14 +174,14 @@ class TableDiscovery:
             subpart_type = row[2]
             if subpart_type == "NONE":
                 subpart_type = None
-            
+
             partition_info[table_name] = {
-                "partitioning_type": row[1],
-                "subpartitioning_type": subpart_type,
-                "interval_definition": row[3],
-                "partition_count": row[4],
-                "def_subpartition_count": row[5],
-                "is_interval": row[6] == "Y",
+                'partitioning_type': row[1],
+                'subpartitioning_type': subpart_type,
+                'interval_definition': row[3],
+                'partition_count': row[4],
+                'def_subpartition_count': row[5],
+                'is_interval': row[6] == 'Y'
             }
 
         cursor.close()
@@ -205,8 +194,8 @@ class TableDiscovery:
         query = """
             SELECT column_name
             FROM all_part_key_columns
-            WHERE owner = :schema 
-              AND name = :table_name 
+            WHERE owner = :schema
+              AND name = :table_name
               AND object_type = 'TABLE'
             ORDER BY column_position
         """
@@ -218,13 +207,13 @@ class TableDiscovery:
         return columns
 
     def _get_table_sizes(self) -> Dict[str, float]:
-        """Get estimated size in GB for all tables using statistics"""
+        """Get estimated size in GB for all tables using statistics (Oracle 19c+)"""
         cursor = self.connection.cursor()
 
         # Use ALL_TAB_STATISTICS which is accessible with basic SELECT privileges
         # Size estimation: num_rows * avg_row_len / (1024^3)
         query = """
-            SELECT 
+            SELECT
                 table_name,
                 ROUND(NVL(num_rows, 0) * NVL(avg_row_len, 0) / POWER(1024, 3), 2) AS estimated_gb
             FROM all_tab_statistics
@@ -246,7 +235,7 @@ class TableDiscovery:
         cursor = self.connection.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 table_name,
                 NVL(num_rows, 0) AS num_rows,
                 NVL(avg_row_len, 0) AS avg_row_len,
@@ -263,11 +252,11 @@ class TableDiscovery:
         for row in cursor.fetchall():
             table_name = row[0]
             stats[table_name] = {
-                "num_rows": row[1],
-                "avg_row_len": row[2],
-                "blocks": row[3],
-                "last_analyzed": row[4],
-                "tablespace_name": row[5] or "USERS",
+                'num_rows': row[1],
+                'avg_row_len': row[2],
+                'blocks': row[3],
+                'last_analyzed': row[4],
+                'tablespace_name': row[5] or 'USERS'
             }
 
         cursor.close()
@@ -322,10 +311,10 @@ class TableDiscovery:
             FROM all_tab_columns
             WHERE owner = :schema
               AND table_name = :table_name
-              AND data_type IN ('DATE', 'TIMESTAMP', 'TIMESTAMP(6)', 
+              AND data_type IN ('DATE', 'TIMESTAMP', 'TIMESTAMP(6)',
                                'TIMESTAMP(9)', 'TIMESTAMP WITH TIME ZONE',
                                'TIMESTAMP WITH LOCAL TIME ZONE')
-            ORDER BY 
+            ORDER BY
                 CASE column_name
                     WHEN 'CREATED_DATE' THEN 1
                     WHEN 'CREATE_DATE' THEN 2
@@ -343,7 +332,11 @@ class TableDiscovery:
 
         columns = []
         for row in cursor.fetchall():
-            columns.append({"name": row[0], "type": row[1], "nullable": row[2]})
+            columns.append({
+                'name': row[0],
+                'type': row[1],
+                'nullable': row[2]
+            })
 
         cursor.close()
         return columns
@@ -358,8 +351,8 @@ class TableDiscovery:
             WHERE owner = :schema
               AND table_name = :table_name
               AND data_type IN ('NUMBER', 'INTEGER', 'BINARY_INTEGER')
-            ORDER BY 
-                CASE 
+            ORDER BY
+                CASE
                     WHEN column_name LIKE '%_ID' THEN 1
                     WHEN column_name LIKE '%ID' THEN 2
                     WHEN column_name LIKE '%_NUM' THEN 3
@@ -373,7 +366,11 @@ class TableDiscovery:
 
         columns = []
         for row in cursor.fetchall():
-            columns.append({"name": row[0], "type": row[1], "nullable": row[2]})
+            columns.append({
+                'name': row[0],
+                'type': row[1],
+                'nullable': row[2]
+            })
 
         cursor.close()
         return columns
@@ -389,8 +386,8 @@ class TableDiscovery:
               AND table_name = :table_name
               AND data_type IN ('VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR')
               AND char_length <= 100
-            ORDER BY 
-                CASE 
+            ORDER BY
+                CASE
                     WHEN column_name LIKE '%_CODE' THEN 1
                     WHEN column_name LIKE '%CODE' THEN 2
                     WHEN column_name LIKE '%_KEY' THEN 3
@@ -404,17 +401,21 @@ class TableDiscovery:
 
         columns = []
         for row in cursor.fetchall():
-            columns.append({"name": row[0], "type": row[1], "nullable": row[2]})
+            columns.append({
+                'name': row[0],
+                'type': row[1],
+                'nullable': row[2]
+            })
 
         cursor.close()
         return columns
 
     def _get_all_columns_ddl(self, table_name: str) -> str:
-        """Get complete column definitions as DDL for CREATE TABLE statement"""
+        """Get complete column definitions as DDL for CREATE TABLE statement (Oracle 19c+)"""
         cursor = self.connection.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 column_name,
                 data_type,
                 data_length,
@@ -422,7 +423,8 @@ class TableDiscovery:
                 data_scale,
                 nullable,
                 data_default,
-                char_length
+                char_length,
+                virtual_column
             FROM all_tab_columns
             WHERE owner = :schema
               AND table_name = :table_name
@@ -430,7 +432,7 @@ class TableDiscovery:
         """
 
         cursor.execute(query, schema=self.schema, table_name=table_name)
-        
+
         column_defs = []
         for row in cursor.fetchall():
             col_name = row[0]
@@ -441,10 +443,15 @@ class TableDiscovery:
             nullable = row[5]
             data_default = row[6]
             char_length = row[7]
-            
+            virtual_column = row[8]
+
+            # Skip virtual columns as they are computed
+            if virtual_column == 'YES':
+                continue
+
             # Build column definition
             col_def = f"    {col_name} "
-            
+
             # Format data type with proper precision/scale
             if data_type in ('VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR'):
                 col_def += f"{data_type}({char_length})"
@@ -464,20 +471,22 @@ class TableDiscovery:
                 col_def += data_type
             elif data_type == 'RAW':
                 col_def += f"RAW({data_length})"
+            elif data_type == 'JSON':
+                col_def += "JSON"  # Oracle 21c+
             else:
                 col_def += data_type
-            
+
             # Add default value if exists
             if data_default is not None:
                 default_val = str(data_default).strip()
                 col_def += f" DEFAULT {default_val}"
-            
+
             # Add NULL/NOT NULL constraint
             if nullable == 'N':
                 col_def += " NOT NULL"
-            
+
             column_defs.append(col_def)
-        
+
         cursor.close()
         return ",\n".join(column_defs) if column_defs else "    -- NO COLUMNS FOUND"
 
@@ -486,7 +495,7 @@ class TableDiscovery:
         cursor = self.connection.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 l.column_name,
                 l.segment_name,
                 l.tablespace_name,
@@ -503,7 +512,7 @@ class TableDiscovery:
         """
 
         cursor.execute(query, schema=self.schema, table_name=table_name)
-        
+
         lob_details = []
         for row in cursor.fetchall():
             lob_details.append({
@@ -517,7 +526,7 @@ class TableDiscovery:
                 "chunk": row[7],
                 "cache": row[8]
             })
-        
+
         cursor.close()
         return lob_details
 
@@ -526,7 +535,7 @@ class TableDiscovery:
         cursor = self.connection.cursor()
 
         query = """
-            SELECT 
+            SELECT
                 compression,
                 compress_for,
                 pct_free,
@@ -542,7 +551,7 @@ class TableDiscovery:
 
         cursor.execute(query, schema=self.schema, table_name=table_name)
         row = cursor.fetchone()
-        
+
         storage_params = {}
         if row:
             storage_params = {
@@ -555,17 +564,17 @@ class TableDiscovery:
                 "next_extent": row[6],
                 "buffer_pool": row[7]
             }
-        
+
         cursor.close()
         return storage_params
 
     def _get_index_details(self, table_name: str) -> List[Dict]:
-        """Get index definitions with columns and storage details from source table"""
+        """Get index definitions with columns and storage details from source table (Oracle 19c+)"""
         cursor = self.connection.cursor()
 
         # First, get column list for each index
         query_columns = """
-            SELECT 
+            SELECT
                 index_name,
                 LISTAGG(column_name, ', ') WITHIN GROUP (ORDER BY column_position) AS index_columns
             FROM all_ind_columns
@@ -573,13 +582,14 @@ class TableDiscovery:
               AND table_name = :table_name
             GROUP BY index_name
         """
-        
+
         cursor.execute(query_columns, schema=self.schema, table_name=table_name)
         index_columns_map = {row[0]: row[1] for row in cursor.fetchall()}
 
-        # Now get full index details with storage parameters
+        # Get full index details with storage parameters
+        # Oracle 19c supports LOCALITY column for partitioned indexes
         query = """
-            SELECT 
+            SELECT
                 i.index_name,
                 i.index_type,
                 i.uniqueness,
@@ -591,7 +601,8 @@ class TableDiscovery:
                 i.ini_trans,
                 i.max_trans,
                 i.degree,
-                i.partitioned
+                i.partitioned,
+                i.visibility
             FROM all_indexes i
             WHERE i.table_owner = :schema
               AND i.table_name = :table_name
@@ -599,14 +610,14 @@ class TableDiscovery:
         """
 
         cursor.execute(query, schema=self.schema, table_name=table_name)
-        
+
         indexes = []
         for row in cursor.fetchall():
             idx_name = row[0]
-            
+
             # Determine if REVERSE by checking index type
             is_reverse = 'REVERSE' in str(row[1]) if row[1] else False
-            
+
             indexes.append({
                 "index_name": idx_name,
                 "index_type": row[1],
@@ -614,28 +625,23 @@ class TableDiscovery:
                 "tablespace_name": row[3],
                 "compression": row[4],  # ENABLED or DISABLED
                 "prefix_length": row[5],  # Compression prefix length
-                "locality": row[6],  # LOCAL or GLOBAL
+                "locality": row[6],  # LOCAL or GLOBAL for partitioned tables
                 "pct_free": row[7],
                 "ini_trans": row[8],
                 "max_trans": row[9],
                 "degree": row[10],  # Parallel degree
                 "partitioned": row[11],  # YES or NO
+                "visibility": row[12],  # VISIBLE or INVISIBLE (Oracle 11g+)
                 "columns": index_columns_map.get(idx_name, ""),
                 "is_reverse": is_reverse
             })
-        
+
         cursor.close()
         return indexes
 
-    def _analyze_table(
-        self,
-        table_name: str,
-        partition_info: Optional[Dict],
-        size_gb: float,
-        stats: Dict,
-        lob_count: int,
-        index_count: int,
-    ) -> Dict:
+    def _analyze_table(self, table_name: str, partition_info: Optional[Dict],
+                      size_gb: float, stats: Dict, lob_count: int,
+                      index_count: int) -> Dict:
         """
         Analyze a single table and generate migration configuration
 
@@ -646,12 +652,12 @@ class TableDiscovery:
         is_partitioned = partition_info is not None
 
         if is_partitioned:
-            current_partition_type = partition_info["partitioning_type"]
-            is_interval = partition_info["is_interval"]
-            has_subpartitions = partition_info["subpartitioning_type"] is not None
+            current_partition_type = partition_info['partitioning_type']
+            is_interval = partition_info['is_interval']
+            has_subpartitions = partition_info['subpartitioning_type'] is not None
             partition_key_columns = self._get_partition_keys(table_name)
         else:
-            current_partition_type = "NONE"
+            current_partition_type = 'NONE'
             is_interval = False
             has_subpartitions = False
             partition_key_columns = []
@@ -677,9 +683,9 @@ class TableDiscovery:
         # - Has numeric/string column for hash
         # - Not already interval-hash
         should_enable = (
-            len(timestamp_columns) > 0
-            and (len(numeric_columns) > 0 or len(string_columns) > 0)
-            and not (is_interval and has_subpartitions)
+            len(timestamp_columns) > 0 and
+            (len(numeric_columns) > 0 or len(string_columns) > 0) and
+            not (is_interval and has_subpartitions)
         )
 
         # Build current state
@@ -687,35 +693,25 @@ class TableDiscovery:
             "is_partitioned": is_partitioned,
             "partition_type": current_partition_type,
             "size_gb": size_gb,
-            "row_count": stats.get("num_rows", 0),
+            "row_count": stats.get('num_rows', 0),
             "lob_count": lob_count,
-            "index_count": index_count,
+            "index_count": index_count
         }
 
         if is_partitioned:
-            current_state.update(
-                {
-                    "is_interval": is_interval,
-                    "interval_definition": partition_info.get("interval_definition"),
-                    "current_partition_count": partition_info.get("partition_count"),
-                    "current_partition_key": (
-                        ", ".join(partition_key_columns)
-                        if partition_key_columns
-                        else None
-                    ),
-                    "has_subpartitions": has_subpartitions,
-                    "subpartition_type": partition_info.get("subpartitioning_type") if has_subpartitions else None,
-                    "subpartition_count": partition_info.get("def_subpartition_count") if has_subpartitions else None,
-                }
-            )
+            current_state.update({
+                "is_interval": is_interval,
+                "interval_definition": partition_info.get('interval_definition'),
+                "current_partition_count": partition_info.get('partition_count'),
+                "current_partition_key": ', '.join(partition_key_columns) if partition_key_columns else None,
+                "has_subpartitions": has_subpartitions,
+                "subpartition_type": partition_info.get('subpartitioning_type'),
+                "subpartition_count": partition_info.get('def_subpartition_count')
+            })
 
         # Determine recommended settings
-        recommended_hash_count = self._recommend_hash_count(
-            size_gb, stats.get("num_rows", 0)
-        )
-        recommended_interval = self._recommend_interval_type(
-            size_gb, stats.get("num_rows", 0)
-        )
+        recommended_hash_count = self._recommend_hash_count(size_gb, stats.get('num_rows', 0))
+        recommended_interval = self._recommend_interval_type(size_gb, stats.get('num_rows', 0))
         recommended_parallel = self._recommend_parallel_degree(size_gb)
         estimated_hours = self._estimate_migration_time(size_gb, index_count)
         priority = self._determine_priority(size_gb, lob_count)
@@ -725,13 +721,13 @@ class TableDiscovery:
         if partition_key_columns:
             target_partition_column = partition_key_columns[0]  # Use existing
         elif timestamp_columns:
-            target_partition_column = timestamp_columns[0]["name"]
+            target_partition_column = timestamp_columns[0]['name']
 
         target_hash_column = None
         if numeric_columns:
-            target_hash_column = numeric_columns[0]["name"]
+            target_hash_column = numeric_columns[0]['name']
         elif string_columns:
-            target_hash_column = string_columns[0]["name"]
+            target_hash_column = string_columns[0]['name']
 
         target_configuration = {
             "partition_type": "INTERVAL",
@@ -742,8 +738,8 @@ class TableDiscovery:
             "subpartition_type": "HASH" if target_hash_column else "NONE",
             "subpartition_column": target_hash_column,
             "subpartition_count": recommended_hash_count,
-            "tablespace": stats.get("tablespace_name", "USERS"),
-            "parallel_degree": recommended_parallel,
+            "tablespace": stats.get('tablespace_name', 'USERS'),
+            "parallel_degree": recommended_parallel
         }
 
         # Get complete column DDL and storage details
@@ -765,7 +761,7 @@ class TableDiscovery:
             "available_columns": {
                 "timestamp_columns": timestamp_columns,
                 "numeric_columns": numeric_columns,
-                "string_columns": string_columns,
+                "string_columns": string_columns
             },
             "migration_action": migration_action,
             "target_configuration": target_configuration,
@@ -774,8 +770,8 @@ class TableDiscovery:
                 "priority": priority,
                 "validate_data": True,
                 "backup_old_table": True,
-                "drop_old_after_days": 7,
-            },
+                "drop_old_after_days": 7
+            }
         }
 
         return table_config
@@ -800,17 +796,17 @@ class TableDiscovery:
             rows_per_day = row_count / 365
 
             if rows_per_day > 1000000:  # > 1M rows/day
-                return "HOUR"
+                return 'HOUR'
             elif rows_per_day > 100000:  # > 100K rows/day
-                return "DAY"
+                return 'DAY'
             else:
-                return "MONTH"
+                return 'MONTH'
         else:
             # Fall back to size-based
             if size_gb > 100:
-                return "DAY"
+                return 'DAY'
             else:
-                return "MONTH"
+                return 'MONTH'
 
     def _recommend_parallel_degree(self, size_gb: float) -> int:
         """Recommend parallel degree for migration"""
@@ -835,17 +831,14 @@ class TableDiscovery:
     def _determine_priority(self, size_gb: float, lob_count: int) -> str:
         """Determine migration priority"""
         if size_gb > 50:
-            return "HIGH"
+            return 'HIGH'
         elif lob_count > 0 or size_gb > 10:
-            return "MEDIUM"
+            return 'MEDIUM'
         else:
-            return "LOW"
+            return 'LOW'
 
-    def _format_criteria(
-        self,
-        include_patterns: Optional[List[str]],
-        exclude_patterns: Optional[List[str]],
-    ) -> str:
+    def _format_criteria(self, include_patterns: Optional[List[str]],
+                        exclude_patterns: Optional[List[str]]) -> str:
         """Format discovery criteria for metadata"""
         parts = [f"Schema: {self.schema}"]
 
@@ -855,11 +848,11 @@ class TableDiscovery:
         if exclude_patterns:
             parts.append(f"Exclude: {', '.join(exclude_patterns)}")
 
-        return ", ".join(parts)
+        return ', '.join(parts)
 
-    def save_config(self, config: Dict, output_file: str = "migration_config.json"):
+    def save_config(self, config: Dict, output_file: str = 'migration_config.json'):
         """Save configuration to JSON file"""
-        with open(output_file, "w", encoding="utf-8") as f:
+        with open(output_file, 'w') as f:
             json.dump(config, f, indent=2, default=str)
 
         print(f"✓ Configuration saved to: {output_file}")
