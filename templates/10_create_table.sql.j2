@@ -68,6 +68,7 @@ PROMPT
 PROMPT Creating table {{ owner }}.{{ new_table_name }}...
 PROMPT Estimated time: {{ current_state.size_gb | estimate_time('load') }}
 
+
 CREATE TABLE "{{ owner }}"."{{ new_table_name }}"
 (
     {{ column_definitions | replace('\n', '\n    ') }}
@@ -76,6 +77,13 @@ CREATE TABLE "{{ owner }}"."{{ new_table_name }}"
 COMPRESS FOR {{ storage_parameters.compress_for | default('OLTP') }}
 {%- endif %}
 TABLESPACE {{ target_configuration.tablespace }}
+
+STORAGE (
+    INITIAL {{ storage_parameters.initial_extent if storage_parameters and storage_parameters.initial_extent else '10240M' }}
+    NEXT {{ storage_parameters.next_extent if storage_parameters and storage_parameters.next_extent else '10240M' }}
+    BUFFER_POOL {{ storage_parameters.buffer_pool if storage_parameters and storage_parameters.buffer_pool else 'DEFAULT' }}
+)
+
 {%- if storage_parameters and storage_parameters.pct_free %}
 PCTFREE {{ storage_parameters.pct_free }}
 {%- endif %}
@@ -85,19 +93,7 @@ INITRANS {{ storage_parameters.ini_trans }}
 {%- if storage_parameters and storage_parameters.max_trans %}
 MAXTRANS {{ storage_parameters.max_trans }}
 {%- endif %}
-{%- if storage_parameters and (storage_parameters.initial_extent or storage_parameters.next_extent or storage_parameters.buffer_pool) %}
-STORAGE (
-    {%- if storage_parameters.initial_extent %}
-    INITIAL {{ storage_parameters.initial_extent }}
-    {%- endif %}
-    {%- if storage_parameters.next_extent %}
-    NEXT {{ storage_parameters.next_extent }}
-    {%- endif %}
-    {%- if storage_parameters.buffer_pool %}
-    BUFFER_POOL {{ storage_parameters.buffer_pool }}
-    {%- endif %}
-)
-{%- endif %}
+
 {%- if target_configuration.partition_type == 'INTERVAL' %}
 PARTITION BY RANGE ({{ target_configuration.partition_column }})
     INTERVAL ({{ target_configuration.interval_type | format_interval(target_configuration.interval_value) }})
@@ -106,7 +102,7 @@ PARTITION BY RANGE ({{ target_configuration.partition_column }})
         {%- if lob_storage and lob_storage | length > 0 %}
         SUBPARTITION TEMPLATE
         (
-            {%- for i in range(target_configuration.subpartition_count) %}
+            {%- for i in range(4) %}
             SUBPARTITION sp{{ i }}
                 {%- for lob in lob_storage %}
                 LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
@@ -115,7 +111,7 @@ PARTITION BY RANGE ({{ target_configuration.partition_column }})
             {%- endfor %}
         )
         {%- else %}
-        SUBPARTITIONS {{ target_configuration.subpartition_count }}
+        SUBPARTITIONS {{ target_configuration.subpartition_count if not lob_storage or lob_storage | length == 0 else 4 }}
         {%- endif %}
     {%- endif %}
     (
@@ -128,7 +124,7 @@ PARTITION BY RANGE ({{ target_configuration.partition_column }})
         {%- if lob_storage and lob_storage | length > 0 %}
         SUBPARTITION TEMPLATE
         (
-            {%- for i in range(target_configuration.subpartition_count) %}
+            {%- for i in range(4) %}
             SUBPARTITION sp{{ i }}
                 {%- for lob in lob_storage %}
                 LOB ({{ lob.column_name }}) STORE AS {{ lob.segment_name }}_{{ i }} (TABLESPACE {{ lob.tablespace_name }}_{{ '%02d' | format((i % 4) + 1) }}){{ ',' if not loop.last else '' }}
@@ -137,7 +133,7 @@ PARTITION BY RANGE ({{ target_configuration.partition_column }})
             {%- endfor %}
         )
         {%- else %}
-        SUBPARTITIONS {{ target_configuration.subpartition_count }}
+        SUBPARTITIONS {{ target_configuration.subpartition_count if not lob_storage or lob_storage | length == 0 else 4 }}
         {%- endif %}
     {%- endif %}
     (
