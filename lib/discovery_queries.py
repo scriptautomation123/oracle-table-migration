@@ -608,7 +608,8 @@ class TableDiscovery:
         index_columns_map = {row[0]: row[1] for row in cursor.fetchall()}
 
         # Get full index details with storage parameters
-        # Oracle 19c supports LOCALITY column for partitioned indexes
+        # Note: LOCALITY is only in ALL_PART_INDEXES, not ALL_INDEXES
+        # VISIBILITY may not exist in older Oracle versions (pre-11g)
         query = """
             SELECT
                 i.index_name,
@@ -616,14 +617,11 @@ class TableDiscovery:
                 i.uniqueness,
                 i.tablespace_name,
                 i.compression,
-                i.prefix_length,
-                i.locality,
                 i.pct_free,
                 i.ini_trans,
                 i.max_trans,
                 i.degree,
-                i.partitioned,
-                i.visibility
+                i.partitioned
             FROM all_indexes i
             WHERE i.table_owner = :schema
               AND i.table_name = :table_name
@@ -639,23 +637,41 @@ class TableDiscovery:
             # Determine if REVERSE by checking index type
             is_reverse = 'REVERSE' in str(row[1]) if row[1] else False
 
-            indexes.append({
+            index_info = {
                 "index_name": idx_name,
                 "index_type": row[1],
                 "uniqueness": row[2],  # UNIQUE or NONUNIQUE
                 "tablespace_name": row[3],
                 "compression": row[4],  # ENABLED or DISABLED
-                "prefix_length": row[5],  # Compression prefix length
-                "locality": row[6],  # LOCAL or GLOBAL for partitioned tables
-                "pct_free": row[7],
-                "ini_trans": row[8],
-                "max_trans": row[9],
-                "degree": row[10],  # Parallel degree
-                "partitioned": row[11],  # YES or NO
-                "visibility": row[12],  # VISIBLE or INVISIBLE (Oracle 11g+)
+                "pct_free": row[5],
+                "ini_trans": row[6],
+                "max_trans": row[7],
+                "degree": row[8],  # Parallel degree
+                "partitioned": row[9],  # YES or NO
                 "columns": index_columns_map.get(idx_name, ""),
                 "is_reverse": is_reverse
-            })
+            }
+            
+            # If index is partitioned, get LOCALITY from ALL_PART_INDEXES
+            if row[9] == 'YES':
+                try:
+                    locality_cursor = self.connection.cursor()
+                    locality_query = """
+                        SELECT locality
+                        FROM all_part_indexes
+                        WHERE owner = :schema
+                          AND index_name = :index_name
+                    """
+                    locality_cursor.execute(locality_query, schema=self.schema, index_name=idx_name)
+                    locality_row = locality_cursor.fetchone()
+                    if locality_row:
+                        index_info["locality"] = locality_row[0]
+                    locality_cursor.close()
+                except Exception:
+                    # If ALL_PART_INDEXES is not accessible, skip locality
+                    pass
+            
+            indexes.append(index_info)
 
         cursor.close()
         return indexes
