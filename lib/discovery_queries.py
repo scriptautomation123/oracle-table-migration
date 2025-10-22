@@ -631,7 +631,7 @@ class TableDiscovery:
 
     def save_config(self, config: Dict, output_file: str = "migration_config.json"):
         """Save configuration to JSON file"""
-        with open(output_file, "w") as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=2, default=str)
 
         print(f"✓ Configuration saved to: {output_file}")

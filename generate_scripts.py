@@ -116,7 +116,7 @@ class MigrationScriptGenerator:
 
         # Setup Jinja2 environment
         self.jinja_env = Environment(
-            loader=FileSystemLoader(str(self.template_dir)),
+            loader=FileSystemLoader(str(self.template_dir), encoding='utf-8'),
             autoescape=select_autoescape(),
             trim_blocks=True,
             lstrip_blocks=True,
@@ -258,7 +258,7 @@ class MigrationScriptGenerator:
 
         try:
             print(f"Loading configuration: {self.config_file}")
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 self.config = json.load(f)
 
             # Update stats
@@ -707,7 +707,7 @@ class MigrationScriptGenerator:
             template = self.jinja_env.get_template(template_name)
             rendered = template.render(**context)
 
-            with open(output_path, "w") as f:
+            with open(output_path, "w", encoding="utf-8") as f:
                 f.write(rendered)
 
             return True
@@ -835,7 +835,7 @@ Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
 
         readme_path = table_dir / "README.md"
-        with open(readme_path, "w") as f:
+        with open(readme_path, "w", encoding="utf-8") as f:
             f.write(readme_content)
 
 
