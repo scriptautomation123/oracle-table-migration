@@ -34,14 +34,48 @@ PROMPT Press Ctrl+C to cancel, or press Enter to continue...
 PAUSE
 
 -- Execute Step 50: Swap tables
+PROMPT
+PROMPT ================================================================
+PROMPT Executing Step 50: Swap Tables
+PROMPT ================================================================
 @@ 50_swap_tables.sql
 
+-- Validate Step 50 completion
+PROMPT Validating Step 50 completion...
+SELECT table_name, partitioned, status
+FROM all_tables
+WHERE owner = '{{ owner }}'
+  AND table_name IN ('{{ table_name }}', '{{ old_table_name }}')
+ORDER BY table_name;
+
 -- Execute Step 60: Restore grants
+PROMPT
+PROMPT ================================================================
+PROMPT Executing Step 60: Restore Grants
+PROMPT ================================================================
 @@ 60_restore_grants.sql
+
+-- Validate Step 60 completion
+PROMPT Validating Step 60 completion...
+SELECT COUNT(*) AS grant_count
+FROM all_tab_privs
+WHERE owner = '{{ owner }}'
+  AND table_name = '{{ table_name }}';
 
 {% if drop_old_table %}
 -- Execute Step 70: Drop old table
+PROMPT
+PROMPT ================================================================
+PROMPT Executing Step 70: Drop Old Table
+PROMPT ================================================================
 @@ 70_drop_old_table.sql
+
+-- Validate Step 70 completion
+PROMPT Validating Step 70 completion...
+SELECT COUNT(*) AS old_table_exists
+FROM all_tables
+WHERE owner = '{{ owner }}'
+  AND table_name = '{{ old_table_name }}';
 {% else %}
 PROMPT
 PROMPT Skipping Step 70: Old table kept as {{ owner }}.{{ old_table_name }}

@@ -97,6 +97,7 @@ class MigrationScriptGenerator:
         config_file: Optional[str] = None,
         template_dir: str = "templates",
         output_dir: str = "output",
+        environment: str = None,
     ):
         """
         Initialize generator
@@ -106,11 +107,13 @@ class MigrationScriptGenerator:
             config_file: Path to migration_config.json
             template_dir: Directory containing Jinja2 templates
             output_dir: Output directory for generated scripts
+            environment: Environment name for configuration
         """
         self.connection_string = connection_string
         self.config_file = config_file
         self.template_dir = Path(template_dir)
         self.output_dir = Path(output_dir)
+        self.environment = environment
         self.connection = None
         self.config = None
 
@@ -198,7 +201,7 @@ class MigrationScriptGenerator:
 
         try:
             # Run discovery
-            discovery = TableDiscovery(self.connection)
+            discovery = TableDiscovery(self.connection, self.environment)
             config = discovery.discover_schema(
                 schema_name, include_patterns, exclude_patterns
             )
@@ -653,17 +656,23 @@ class MigrationScriptGenerator:
         string_cols = [c["name"] for c in available_cols.get("string_columns", [])]
         all_columns = timestamp_cols + numeric_cols + string_cols
 
+        # Get environment configuration
+        environment_config = self.config.get("environment_config", {})
+        
         context = {
             # Basic info
             "owner": owner,
             "table_name": table_name,
-            "new_table_name": f"{table_name}_NEW",
-            "old_table_name": f"{table_name}_OLD",
+            "new_table_name": table_config.get("new_table_name", f"{table_name}_NEW"),
+            "old_table_name": table_config.get("old_table_name", f"{table_name}_OLD"),
             # Configuration
             "target_configuration": target_config,
             "current_state": current_state,
             "migration_action": table_config.get("migration_action"),
             "migration_settings": table_config.get("migration_settings", {}),
+            # Environment configuration
+            "environment_config": environment_config,
+            "environment": environment_config.get("name", "global"),
             # Columns
             "columns": table_config.get("columns", []),
             "column_list": ", ".join(all_columns) if all_columns else "*",
@@ -905,6 +914,11 @@ def main():
         default="migration_config.json",
         help="Output JSON file for discovery (default: migration_config.json)",
     )
+    parser.add_argument(
+        "--environment",
+        type=str,
+        help="Environment name for configuration (e.g., production, development)",
+    )
 
     # Validation options
     parser.add_argument(
@@ -966,6 +980,7 @@ def main():
         config_file=args.config,
         template_dir=args.template_dir,
         output_dir=args.output_dir,
+        environment=args.environment,
     )
 
     # Execute appropriate mode

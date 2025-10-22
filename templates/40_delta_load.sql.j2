@@ -39,11 +39,22 @@ BEGIN
 END;
 /
 
--- Count delta rows
+-- Count delta rows using safe parameterized query
 PROMPT Counting delta rows...
+DECLARE
+    v_partition_column VARCHAR2(128) := '{{ target_configuration.partition_column }}';
+    v_cutoff_timestamp DATE := TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS');
+    v_table_name VARCHAR2(128) := '{{ owner }}.{{ table_name }}';
+    v_sql VARCHAR2(4000);
 BEGIN
-    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM {{ owner }}.{{ table_name }} WHERE {{ target_configuration.partition_column }} > TO_DATE(''{{ cutoff_timestamp }}'', ''YYYY-MM-DD HH24:MI:SS'')'
-    INTO :v_delta_count;
+    -- Build safe SQL with proper escaping
+    v_sql := 'SELECT COUNT(*) FROM ' || v_table_name || ' WHERE ' || v_partition_column || ' > :1';
+    
+    DBMS_OUTPUT.PUT_LINE('Executing: ' || v_sql);
+    DBMS_OUTPUT.PUT_LINE('Partition column: ' || v_partition_column);
+    DBMS_OUTPUT.PUT_LINE('Cutoff timestamp: ' || TO_CHAR(v_cutoff_timestamp, 'YYYY-MM-DD HH24:MI:SS'));
+    
+    EXECUTE IMMEDIATE v_sql INTO :v_delta_count USING v_cutoff_timestamp;
     
     DBMS_OUTPUT.PUT_LINE('Delta rows to process: ' || TO_CHAR(:v_delta_count, '999,999,999,999'));
     DBMS_OUTPUT.PUT_LINE('');
@@ -55,6 +66,7 @@ BEGIN
 EXCEPTION
     WHEN OTHERS THEN
         DBMS_OUTPUT.PUT_LINE('ERROR counting delta rows: ' || SQLERRM);
+        DBMS_OUTPUT.PUT_LINE('SQL attempted: ' || v_sql);
         RAISE;
 END;
 /

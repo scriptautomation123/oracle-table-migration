@@ -36,17 +36,57 @@ PROMPT Estimated Total Time: {{ (current_state.size_gb * 1.5) | estimate_time('l
 PROMPT ================================================================
 
 -- Execute Step 10: Create table structure
+PROMPT
+PROMPT ================================================================
+PROMPT Executing Step 10: Create Table Structure
+PROMPT ================================================================
 @@ 10_create_table.sql
 
+-- Validate Step 10 completion
+PROMPT Validating Step 10 completion...
+SELECT COUNT(*) AS table_exists
+FROM all_tables
+WHERE owner = '{{ owner }}'
+  AND table_name = '{{ new_table_name }}';
+
 -- Execute Step 20: Initial data load  
+PROMPT
+PROMPT ================================================================
+PROMPT Executing Step 20: Initial Data Load
+PROMPT ================================================================
 @@ 20_data_load.sql
 
+-- Validate Step 20 completion
+PROMPT Validating Step 20 completion...
+SELECT COUNT(*) AS row_count
+FROM {{ owner }}.{{ new_table_name }};
+
 -- Execute Step 30: Create indexes
+PROMPT
+PROMPT ================================================================
+PROMPT Executing Step 30: Create Indexes
+PROMPT ================================================================
 @@ 30_create_indexes.sql
+
+-- Validate Step 30 completion
+PROMPT Validating Step 30 completion...
+SELECT COUNT(*) AS index_count
+FROM all_indexes
+WHERE owner = '{{ owner }}'
+  AND table_name = '{{ new_table_name }}';
 
 {% if include_delta_load %}
 -- Execute Step 40: Delta load
+PROMPT
+PROMPT ================================================================
+PROMPT Executing Step 40: Delta Load
+PROMPT ================================================================
 @@ 40_delta_load.sql
+
+-- Validate Step 40 completion
+PROMPT Validating Step 40 completion...
+SELECT COUNT(*) AS final_row_count
+FROM {{ owner }}.{{ new_table_name }};
 {% endif %}
 
 PROMPT

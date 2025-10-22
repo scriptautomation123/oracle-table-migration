@@ -1,0 +1,26 @@
+{
+  "environment": "production",
+  "description": "Production environment configuration",
+  "tablespaces": {
+    "data": {
+      "primary": "PROD_DATA_01",
+      "lob": ["PROD_LOB_01", "PROD_LOB_02", "PROD_LOB_03", "PROD_LOB_04"]
+    }
+  },
+  "subpartition_defaults": {
+    "min_count": 4,
+    "max_count": 32,
+    "size_based_recommendations": {
+      "small": {"max_gb": 5, "count": 4},
+      "medium": {"max_gb": 25, "count": 8},
+      "large": {"max_gb": 100, "count": 16},
+      "xlarge": {"max_gb": 500, "count": 24},
+      "xxlarge": {"max_gb": 999999, "count": 32}
+    }
+  },
+  "parallel_defaults": {
+    "min_degree": 2,
+    "max_degree": 16,
+    "default_degree": 8
+  }
+}

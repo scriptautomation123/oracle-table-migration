@@ -17,22 +17,26 @@ This module:
 import json
 from datetime import datetime
 from typing import Dict, List, Optional
+from .environment_config import EnvironmentConfigManager
 
 
 class TableDiscovery:
     """Discover tables and generate migration configuration"""
 
-    def __init__(self, connection):
+    def __init__(self, connection, environment: str = None):
         """
         Initialize discovery with database connection
 
         Args:
             connection: Oracle database connection (oracledb or cx_Oracle)
+            environment: Environment name for configuration
         """
         self.connection = connection
         self.schema = None
         self.tables = []
         self.metadata = {}
+        self.environment = environment or 'global'
+        self.env_manager = EnvironmentConfigManager()
 
     def discover_schema(self, schema_name: str,
                        include_patterns: Optional[List[str]] = None,
@@ -91,14 +95,38 @@ class TableDiscovery:
         # Step 6: Generate metadata
         self.metadata = {
             "generated_date": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            "environment": self.environment,
             "schema": self.schema,
             "discovery_criteria": self._format_criteria(include_patterns, exclude_patterns),
             "total_tables_found": len(all_tables),
             "tables_selected_for_migration": len([t for t in tables_config if t['enabled']])
         }
 
+        # Add environment configuration to metadata
+        env_config = self.env_manager.load_environment_config(self.environment)
+        environment_config = {
+            "name": env_config.environment,
+            "tablespaces": {
+                "data": {
+                    "primary": env_config.tablespaces.primary,
+                    "lob": env_config.tablespaces.lob
+                }
+            },
+            "subpartition_defaults": {
+                "min_count": env_config.subpartition_defaults.min_count,
+                "max_count": env_config.subpartition_defaults.max_count,
+                "size_based_recommendations": env_config.subpartition_defaults.size_based_recommendations
+            },
+            "parallel_defaults": {
+                "min_degree": env_config.parallel_defaults.min_degree,
+                "max_degree": env_config.parallel_defaults.max_degree,
+                "default_degree": env_config.parallel_defaults.default_degree
+            }
+        }
+
         config = {
             "metadata": self.metadata,
+            "environment_config": environment_config,
             "tables": tables_config
         }
 
@@ -728,7 +756,7 @@ class TableDiscovery:
         # Determine recommended settings
         recommended_hash_count = self._recommend_hash_count(size_gb, stats.get('num_rows', 0))
         recommended_interval = self._recommend_interval_type(size_gb, stats.get('num_rows', 0))
-        recommended_parallel = self._recommend_parallel_degree(size_gb)
+        recommended_parallel = self.env_manager.get_parallel_degree(self.environment, size_gb)
         estimated_hours = self._estimate_migration_time(size_gb, index_count)
         priority = self._determine_priority(size_gb, lob_count)
 
@@ -745,6 +773,9 @@ class TableDiscovery:
         elif string_columns:
             target_hash_column = string_columns[0]['name']
 
+        # Get environment-specific tablespaces
+        env_tablespaces = self.env_manager.get_tablespaces(self.environment)
+        
         target_configuration = {
             "partition_type": "INTERVAL",
             "partition_column": target_partition_column,
@@ -754,7 +785,8 @@ class TableDiscovery:
             "subpartition_type": "HASH" if target_hash_column else "NONE",
             "subpartition_column": target_hash_column,
             "subpartition_count": recommended_hash_count,
-            "tablespace": stats.get('tablespace_name', 'USERS'),
+            "tablespace": env_tablespaces['data'],
+            "lob_tablespaces": env_tablespaces['lob'],
             "parallel_degree": recommended_parallel
         }
 
@@ -773,6 +805,8 @@ class TableDiscovery:
             "enabled": should_enable,
             "owner": self.schema,
             "table_name": table_name,
+            "new_table_name": f"{table_name}_NEW",
+            "old_table_name": f"{table_name}_OLD",
             "columns": columns_metadata,
             "lob_storage": lob_storage_details,
             "storage_parameters": storage_params,
@@ -797,17 +831,8 @@ class TableDiscovery:
         return table_config
 
     def _recommend_hash_count(self, size_gb: float, row_count: int) -> int:
-        """Recommend number of hash subpartitions based on size"""
-        if size_gb > 100:
-            return 16
-        elif size_gb > 50:
-            return 12
-        elif size_gb > 10:
-            return 8
-        elif size_gb > 1:
-            return 4
-        else:
-            return 2
+        """Recommend number of hash subpartitions based on size and environment"""
+        return self.env_manager.calculate_subpartition_count(size_gb, self.environment)
 
     def _recommend_interval_type(self, size_gb: float, row_count: int) -> str:
         """Recommend interval type (HOUR, DAY, MONTH) based on data volume"""

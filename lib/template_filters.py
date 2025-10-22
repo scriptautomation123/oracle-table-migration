@@ -307,6 +307,83 @@ def recommend_commit_frequency(row_count: int) -> int:
         return 1000
 
 
+def get_environment_tablespace(env_config: dict, tablespace_type: str = "primary") -> str:
+    """
+    Get tablespace from environment configuration
+    
+    Args:
+        env_config: Environment configuration dictionary
+        tablespace_type: Type of tablespace ('primary' or 'lob')
+        
+    Returns:
+        Tablespace name
+    """
+    if not env_config:
+        return "USERS"
+    
+    tablespaces = env_config.get("tablespaces", {})
+    data_tablespaces = tablespaces.get("data", {})
+    
+    if tablespace_type == "primary":
+        return data_tablespaces.get("primary", "USERS")
+    elif tablespace_type == "lob":
+        lob_tablespaces = data_tablespaces.get("lob", ["USERS"])
+        return lob_tablespaces[0] if lob_tablespaces else "USERS"
+    
+    return "USERS"
+
+
+def get_environment_limits(env_config: dict, limit_type: str) -> dict:
+    """
+    Get environment limits for validation
+    
+    Args:
+        env_config: Environment configuration dictionary
+        limit_type: Type of limits ('subpartition' or 'parallel')
+        
+    Returns:
+        Dictionary with min/max values
+    """
+    if not env_config:
+        if limit_type == "subpartition":
+            return {"min": 2, "max": 16}
+        else:  # parallel
+            return {"min": 1, "max": 8}
+    
+    if limit_type == "subpartition":
+        defaults = env_config.get("subpartition_defaults", {})
+        return {
+            "min": defaults.get("min_count", 2),
+            "max": defaults.get("max_count", 16)
+        }
+    else:  # parallel
+        defaults = env_config.get("parallel_defaults", {})
+        return {
+            "min": defaults.get("min_degree", 1),
+            "max": defaults.get("max_degree", 8)
+        }
+
+
+def validate_environment_setting(value: int, env_config: dict, setting_type: str) -> bool:
+    """
+    Validate a setting against environment limits
+    
+    Args:
+        value: Setting value to validate
+        env_config: Environment configuration
+        setting_type: Type of setting ('subpartition_count' or 'parallel_degree')
+        
+    Returns:
+        True if within limits
+    """
+    if setting_type == "subpartition_count":
+        limits = get_environment_limits(env_config, "subpartition")
+    else:  # parallel_degree
+        limits = get_environment_limits(env_config, "parallel")
+    
+    return limits["min"] <= value <= limits["max"]
+
+
 def register_custom_filters(jinja_env):
     """
     Register all custom filters with Jinja2 environment
@@ -326,9 +403,15 @@ def register_custom_filters(jinja_env):
     jinja_env.filters["lob_storage"] = format_lob_storage
     jinja_env.filters["is_power_of_2"] = is_power_of_2
     jinja_env.filters["commit_frequency"] = recommend_commit_frequency
+    jinja_env.filters["get_environment_tablespace"] = get_environment_tablespace
+    jinja_env.filters["get_environment_limits"] = get_environment_limits
+    jinja_env.filters["validate_environment_setting"] = validate_environment_setting
 
     # Also add as globals for use in templates
     jinja_env.globals["is_power_of_2"] = is_power_of_2
+    jinja_env.globals["get_environment_tablespace"] = get_environment_tablespace
+    jinja_env.globals["get_environment_limits"] = get_environment_limits
+    jinja_env.globals["validate_environment_setting"] = validate_environment_setting
 
 
 # Test if run directly

@@ -60,92 +60,14 @@ BEGIN
 END;
 /
 
--- Get source row count
-PROMPT Counting source rows...
+-- Get source row count using generic validation
+@validation/count_table_rows.sql {{ owner }} {{ table_name }} {{ current_state.row_count if current_state.row_count > 0 else '' }}
 
-BEGIN
-    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM {{ owner }}.{{ table_name }}'
-    INTO :v_source_count;
-    
-    DBMS_OUTPUT.PUT_LINE('Source table row count: ' || TO_CHAR(:v_source_count, '999,999,999,999'));
-    DBMS_OUTPUT.PUT_LINE('');
-    
-    {%- if current_state.row_count > 0 %}
-    IF :v_source_count != {{ current_state.row_count }} THEN
-        DBMS_OUTPUT.PUT_LINE('NOTE: Row count differs from discovery ({{ current_state.row_count | format_row_count }})');
-        DBMS_OUTPUT.PUT_LINE('      This is normal if data has changed since discovery');
-    END IF;
-    {%- endif %}
-EXCEPTION
-    WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('ERROR counting source rows: ' || SQLERRM);
-        RAISE;
-END;
-/
-
--- Verify target table is empty
-PROMPT Verifying target table is empty...
-
-DECLARE
-    v_count NUMBER;
-BEGIN
-    SELECT COUNT(*) INTO v_count FROM {{ owner }}.{{ new_table_name }};
-    
-    IF v_count > 0 THEN
-        DBMS_OUTPUT.PUT_LINE('WARNING: Target table has ' || v_count || ' rows!');
-        DBMS_OUTPUT.PUT_LINE('         Consider truncating before load');
-        RAISE_APPLICATION_ERROR(-20001, 'Target table is not empty');
-    ELSE
-        DBMS_OUTPUT.PUT_LINE('✓ Target table is empty - ready for load');
-    END IF;
-END;
-/
+-- Verify target table is empty using generic validation
+@validation/count_table_rows.sql {{ owner }} {{ new_table_name }} 0
 
 -- Disable constraints on target (performance optimization)
-PROMPT
-PROMPT Disabling constraints on target table...
-
-DECLARE
-    v_constraint_count NUMBER := 0;
-BEGIN
-    FOR c IN (
-        SELECT constraint_name, constraint_type
-        FROM all_constraints
-        WHERE owner = '{{ owner }}'
-          AND table_name = '{{ new_table_name }}'
-          AND constraint_type IN ('U', 'P', 'R', 'C')
-          AND status = 'ENABLED'
-        ORDER BY 
-            CASE constraint_type
-                WHEN 'R' THEN 1  -- Foreign keys first
-                WHEN 'C' THEN 2  -- Check constraints
-                WHEN 'U' THEN 3  -- Unique
-                WHEN 'P' THEN 4  -- Primary key last
-            END
-    ) LOOP
-        BEGIN
-            EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ new_table_name }} DISABLE CONSTRAINT ' || c.constraint_name;
-            v_constraint_count := v_constraint_count + 1;
-            DBMS_OUTPUT.PUT_LINE('  Disabled ' || 
-                CASE c.constraint_type
-                    WHEN 'P' THEN 'PRIMARY KEY'
-                    WHEN 'U' THEN 'UNIQUE'
-                    WHEN 'R' THEN 'FOREIGN KEY'
-                    WHEN 'C' THEN 'CHECK'
-                END || ': ' || c.constraint_name);
-        EXCEPTION
-            WHEN OTHERS THEN
-                DBMS_OUTPUT.PUT_LINE('  WARNING: Could not disable ' || c.constraint_name || ': ' || SQLERRM);
-        END;
-    END LOOP;
-    
-    IF v_constraint_count = 0 THEN
-        DBMS_OUTPUT.PUT_LINE('  No constraints to disable');
-    ELSE
-        DBMS_OUTPUT.PUT_LINE('✓ Disabled ' || v_constraint_count || ' constraint(s)');
-    END IF;
-END;
-/
+@validation/disable_constraints.sql {{ owner }} {{ new_table_name }}
 
 -- Enable parallel DML
 ALTER SESSION ENABLE PARALLEL DML;
@@ -198,51 +120,7 @@ PROMPT ✓ Data load completed and committed
 {%- endif %}
 
 -- Re-enable constraints
-PROMPT
-PROMPT ================================================================
-PROMPT Re-enabling constraints...
-PROMPT ================================================================
-
-DECLARE
-    v_constraint_count NUMBER := 0;
-    v_failed_count NUMBER := 0;
-BEGIN
-    FOR c IN (
-        SELECT constraint_name, constraint_type
-        FROM all_constraints
-        WHERE owner = '{{ owner }}'
-          AND table_name = '{{ new_table_name }}'
-          AND constraint_type IN ('U', 'P', 'R', 'C')
-          AND status = 'DISABLED'
-        ORDER BY 
-            CASE constraint_type
-                WHEN 'P' THEN 1  -- Primary key first
-                WHEN 'U' THEN 2  -- Unique
-                WHEN 'C' THEN 3  -- Check
-                WHEN 'R' THEN 4  -- Foreign keys last
-            END
-    ) LOOP
-        BEGIN
-            EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ new_table_name }} ENABLE NOVALIDATE CONSTRAINT ' || c.constraint_name;
-            v_constraint_count := v_constraint_count + 1;
-            DBMS_OUTPUT.PUT_LINE('  ✓ Enabled ' || c.constraint_name);
-        EXCEPTION
-            WHEN OTHERS THEN
-                v_failed_count := v_failed_count + 1;
-                DBMS_OUTPUT.PUT_LINE('  ✗ Failed to enable ' || c.constraint_name || ': ' || SQLERRM);
-        END;
-    END LOOP;
-    
-    IF v_constraint_count > 0 THEN
-        DBMS_OUTPUT.PUT_LINE('');
-        DBMS_OUTPUT.PUT_LINE('✓ Re-enabled ' || v_constraint_count || ' constraint(s)');
-        IF v_failed_count > 0 THEN
-            DBMS_OUTPUT.PUT_LINE('✗ Failed to enable ' || v_failed_count || ' constraint(s)');
-            DBMS_OUTPUT.PUT_LINE('  Manual intervention may be required');
-        END IF;
-    END IF;
-END;
-/
+@validation/enable_constraints.sql {{ owner }} {{ new_table_name }}
 
 -- Final summary
 PROMPT

@@ -26,7 +26,27 @@ PROMPT Indexes to create: {{ current_state.index_count }}
 PROMPT Estimated time: {{ (current_state.size_gb * 0.15) | estimate_time('index') }}
 PROMPT ================================================================
 
--- Enable parallel DDL
+-- Store original parallel settings
+VARIABLE v_original_parallel_degree NUMBER
+VARIABLE v_original_parallel_policy VARCHAR2(20)
+
+BEGIN
+    -- Store current parallel degree
+    SELECT value INTO :v_original_parallel_degree 
+    FROM v$parameter 
+    WHERE name = 'parallel_degree';
+    
+    -- Store current parallel policy
+    SELECT value INTO :v_original_parallel_policy 
+    FROM v$parameter 
+    WHERE name = 'parallel_degree_policy';
+    
+    DBMS_OUTPUT.PUT_LINE('Original parallel degree: ' || :v_original_parallel_degree);
+    DBMS_OUTPUT.PUT_LINE('Original parallel policy: ' || :v_original_parallel_policy);
+END;
+/
+
+-- Set parallel DDL for index creation only
 ALTER SESSION FORCE PARALLEL DDL PARALLEL {{ target_configuration.parallel_degree }};
 
 {%- if indexes and indexes | length > 0 %}
@@ -74,7 +94,18 @@ REVERSE
 PROMPT WARNING: No index metadata found. You may need to create indexes manually.
 {%- endif %}
 
--- Reset parallel settings
-ALTER SESSION FORCE PARALLEL DDL;
+-- Restore original parallel settings
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('Restoring original parallel settings...');
+    DBMS_OUTPUT.PUT_LINE('Restoring parallel degree: ' || :v_original_parallel_degree);
+    DBMS_OUTPUT.PUT_LINE('Restoring parallel policy: ' || :v_original_parallel_policy);
+END;
+/
+
+-- Restore original parallel degree
+ALTER SESSION FORCE PARALLEL DDL PARALLEL :v_original_parallel_degree;
+
+-- Restore original parallel policy
+ALTER SESSION SET PARALLEL_DEGREE_POLICY = :v_original_parallel_policy;
 
 PROMPT ✓ Step 30 Complete: {{ indexes | length if indexes else 0 }} index(es) created

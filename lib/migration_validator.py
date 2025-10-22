@@ -91,6 +91,10 @@ class MigrationValidator:
         self.config = config
         self.connection = None
         self.cursor = None
+        
+        # Extract environment configuration
+        self.environment_config = config.get("environment_config", {})
+        self.environment = self.environment_config.get("name", "global")
 
         # Results storage
         self.pre_migration_results: List[ValidationResult] = []
@@ -190,6 +194,9 @@ class MigrationValidator:
         if table_config.get("current_state", {}).get("is_partitioned"):
             results.append(self._check_existing_partitions(table_config))
 
+        # Check 9: Environment-specific settings validation
+        results.append(self._check_environment_settings(table_config))
+
         self.pre_migration_results.extend(results)
         self._update_stats(results)
         self._print_results(results, "PRE-MIGRATION")
@@ -213,7 +220,7 @@ class MigrationValidator:
         self.logger.info(f"{'='*70}")
 
         results = []
-        new_table_name = table_config["table_name"] + "_NEW"
+        new_table_name = table_config.get("new_table_name", table_config["table_name"] + "_NEW")
 
         # Check 1: New table exists
         results.append(self._check_table_exists(table_config["owner"], new_table_name))
@@ -269,7 +276,7 @@ class MigrationValidator:
 
         results = []
         old_table = table_config["table_name"]
-        new_table = table_config["table_name"] + "_NEW"
+        new_table = table_config.get("new_table_name", table_config["table_name"] + "_NEW")
         owner = table_config["owner"]
 
         # Check 1: Total row count
@@ -612,6 +619,67 @@ class MigrationValidator:
         except Exception as e:
             result.warn(f"Cannot check partitions: {e}")
 
+        return result
+
+    def _check_environment_settings(self, table_config: Dict) -> ValidationResult:
+        """Validate environment-specific settings"""
+        result = ValidationResult("Environment Settings")
+        
+        target_config = table_config.get("target_configuration", {})
+        env_defaults = self.environment_config.get("subpartition_defaults", {})
+        parallel_defaults = self.environment_config.get("parallel_defaults", {})
+        
+        # Check subpartition count against environment limits
+        subpart_count = target_config.get("subpartition_count")
+        if subpart_count is not None:
+            min_count = env_defaults.get("min_count", 2)
+            max_count = env_defaults.get("max_count", 16)
+            
+            if subpart_count < min_count:
+                result.warn(
+                    f"Subpartition count {subpart_count} below environment minimum {min_count}",
+                    {"subpart_count": subpart_count, "min_count": min_count}
+                )
+            elif subpart_count > max_count:
+                result.warn(
+                    f"Subpartition count {subpart_count} above environment maximum {max_count}",
+                    {"subpart_count": subpart_count, "max_count": max_count}
+                )
+            else:
+                result.success(f"Subpartition count {subpart_count} within environment limits")
+        
+        # Check parallel degree against environment limits
+        parallel_degree = target_config.get("parallel_degree")
+        if parallel_degree is not None:
+            min_degree = parallel_defaults.get("min_degree", 1)
+            max_degree = parallel_defaults.get("max_degree", 8)
+            
+            if parallel_degree < min_degree:
+                result.warn(
+                    f"Parallel degree {parallel_degree} below environment minimum {min_degree}",
+                    {"parallel_degree": parallel_degree, "min_degree": min_degree}
+                )
+            elif parallel_degree > max_degree:
+                result.warn(
+                    f"Parallel degree {parallel_degree} above environment maximum {max_degree}",
+                    {"parallel_degree": parallel_degree, "max_degree": max_degree}
+                )
+            else:
+                result.success(f"Parallel degree {parallel_degree} within environment limits")
+        
+        # Check tablespace configuration
+        tablespace = target_config.get("tablespace")
+        env_tablespaces = self.environment_config.get("tablespaces", {})
+        expected_primary = env_tablespaces.get("data", {}).get("primary")
+        
+        if tablespace and expected_primary and tablespace != expected_primary:
+            result.warn(
+                f"Tablespace {tablespace} differs from environment default {expected_primary}",
+                {"tablespace": tablespace, "expected": expected_primary}
+            )
+        else:
+            result.success(f"Tablespace configuration matches environment: {self.environment}")
+        
         return result
 
     # ==================== Post-Migration Checks ====================

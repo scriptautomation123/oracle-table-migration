@@ -11,6 +11,8 @@
       "enabled": true,
       "owner": "MYSCHEMA",
       "table_name": "IE_PC_OFFER_IN",
+      "new_table_name": "IE_PC_OFFER_IN_NEW",
+      "old_table_name": "IE_PC_OFFER_IN_OLD",
       
       "current_state": {
         "is_partitioned": true,
@@ -67,7 +69,9 @@
         "priority": "MEDIUM",
         "validate_data": true,
         "backup_old_table": true,
-        "drop_old_after_days": 7
+        "drop_old_after_days": 7,
+        "constraint_validation": true,
+        "auto_enable_constraints": true
       }
     },
     
@@ -75,6 +79,8 @@
       "enabled": true,
       "owner": "MYSCHEMA",
       "table_name": "IE_PC_SEQ_OUT",
+      "new_table_name": "IE_PC_SEQ_OUT_NEW",
+      "old_table_name": "IE_PC_SEQ_OUT_OLD",
       
       "current_state": {
         "is_partitioned": true,
@@ -128,7 +134,9 @@
         "priority": "LOW",
         "validate_data": true,
         "backup_old_table": true,
-        "drop_old_after_days": 7
+        "drop_old_after_days": 7,
+        "constraint_validation": true,
+        "auto_enable_constraints": true
       }
     },
     
@@ -136,6 +144,8 @@
       "enabled": false,
       "owner": "MYSCHEMA",
       "table_name": "IE_CONTROL_TABLE",
+      "new_table_name": "IE_CONTROL_TABLE_NEW",
+      "old_table_name": "IE_CONTROL_TABLE_OLD",
       
       "current_state": {
         "is_partitioned": false,
@@ -178,7 +188,9 @@
         "priority": "LOW",
         "validate_data": true,
         "backup_old_table": true,
-        "drop_old_after_days": 7
+        "drop_old_after_days": 7,
+        "constraint_validation": true,
+        "auto_enable_constraints": true
       }
     }
   ]

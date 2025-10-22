@@ -1,0 +1,26 @@
+{
+  "environment": "global",
+  "description": "Default configuration for all environments",
+  "tablespaces": {
+    "data": {
+      "primary": "USERS",
+      "lob": ["GD_LOB_01", "GD_LOB_02", "GD_LOB_03", "GD_LOB_04"]
+    }
+  },
+  "subpartition_defaults": {
+    "min_count": 2,
+    "max_count": 16,
+    "size_based_recommendations": {
+      "small": {"max_gb": 1, "count": 2},
+      "medium": {"max_gb": 10, "count": 4},
+      "large": {"max_gb": 50, "count": 8},
+      "xlarge": {"max_gb": 100, "count": 12},
+      "xxlarge": {"max_gb": 999999, "count": 16}
+    }
+  },
+  "parallel_defaults": {
+    "min_degree": 1,
+    "max_degree": 8,
+    "default_degree": 4
+  }
+}

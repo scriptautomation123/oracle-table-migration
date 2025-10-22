@@ -11,6 +11,8 @@
       "enabled": true,
       "owner": "MYSCHEMA",
       "table_name": "ORDERS",
+      "new_table_name": "ORDERS_NEW",
+      "old_table_name": "ORDERS_OLD",
       
       "current_state": {
         "is_partitioned": false,
@@ -60,7 +62,9 @@
         "priority": "HIGH",
         "validate_data": true,
         "backup_old_table": true,
-        "drop_old_after_days": 14
+        "drop_old_after_days": 14,
+        "constraint_validation": true,
+        "auto_enable_constraints": true
       }
     },
     
@@ -68,6 +72,8 @@
       "enabled": true,
       "owner": "MYSCHEMA",
       "table_name": "TRANSACTIONS",
+      "new_table_name": "TRANSACTIONS_NEW",
+      "old_table_name": "TRANSACTIONS_OLD",
       
       "current_state": {
         "is_partitioned": false,
@@ -115,7 +121,9 @@
         "priority": "HIGH",
         "validate_data": true,
         "backup_old_table": true,
-        "drop_old_after_days": 30
+        "drop_old_after_days": 30,
+        "constraint_validation": true,
+        "auto_enable_constraints": true
       }
     }
   ]
