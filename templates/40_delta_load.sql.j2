@@ -9,7 +9,7 @@ Purpose: Load incremental changes since initial load
 -- DELTA LOAD: {{ owner }}.{{ new_table_name }}
 -- ==================================================================
 -- Generated: {{ generation_date }}
--- Captures changes since: {{ cutoff_timestamp }}
+-- Captures changes since initial load: {{ cutoff_timestamp }}
 -- ==================================================================
 
 SET ECHO ON
@@ -21,15 +21,53 @@ PROMPT Step 40: Delta Load (Incremental Changes)
 PROMPT ================================================================
 PROMPT Source: {{ owner }}.{{ table_name }}
 PROMPT Target: {{ owner }}.{{ new_table_name }}
-PROMPT Cutoff: {{ cutoff_timestamp }}
+PROMPT Captures changes since: {{ cutoff_timestamp }}
 PROMPT ================================================================
 
--- Merge incremental changes
+-- Variables for timing and counts
+VARIABLE v_start_time VARCHAR2(30)
+VARIABLE v_end_time VARCHAR2(30)
+VARIABLE v_delta_count NUMBER
+VARIABLE v_insert_count NUMBER
+VARIABLE v_update_count NUMBER
+
+-- Record start time
+BEGIN
+    SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') INTO :v_start_time FROM dual;
+    DBMS_OUTPUT.PUT_LINE('Delta load started at: ' || :v_start_time);
+    DBMS_OUTPUT.PUT_LINE('');
+END;
+/
+
+-- Count delta rows
+PROMPT Counting delta rows...
+BEGIN
+    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM {{ owner }}.{{ table_name }} WHERE {{ target_configuration.partition_column }} > TO_DATE(''{{ cutoff_timestamp }}'', ''YYYY-MM-DD HH24:MI:SS'')'
+    INTO :v_delta_count;
+    
+    DBMS_OUTPUT.PUT_LINE('Delta rows to process: ' || TO_CHAR(:v_delta_count, '999,999,999,999'));
+    DBMS_OUTPUT.PUT_LINE('');
+    
+    IF :v_delta_count = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('No delta changes found - skipping delta load');
+        RETURN;
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('ERROR counting delta rows: ' || SQLERRM);
+        RAISE;
+END;
+/
+
+{% if primary_key_columns and primary_key_columns | length > 0 %}
+-- Delta load with MERGE (tables with primary keys)
+PROMPT Processing delta changes with MERGE...
+
 MERGE {{ target_configuration.parallel_degree | parallel_hint }} INTO {{ owner }}.{{ new_table_name }} tgt
 USING (
     SELECT {{ column_list }}
     FROM {{ owner }}.{{ table_name }}
-    WHERE {{ target_configuration.partition_column }} >= TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS')
+    WHERE {{ target_configuration.partition_column }} > TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS')
 ) src
 ON ({{ primary_key_columns | match_condition('tgt', 'src') }})
 WHEN MATCHED THEN
@@ -38,6 +76,43 @@ WHEN NOT MATCHED THEN
     INSERT ({{ column_list }})
     VALUES ({{ column_list | format_column_list('src.') }});
 
+-- Get merge statistics
+BEGIN
+    :v_insert_count := SQL%ROWCOUNT;
+    DBMS_OUTPUT.PUT_LINE('Delta load completed: ' || TO_CHAR(:v_insert_count, '999,999,999,999') || ' rows processed');
+END;
+/
+
+{% else %}
+-- Delta load with INSERT (tables without primary keys)
+PROMPT Processing delta changes with INSERT (no primary key)...
+
+INSERT {{ target_configuration.parallel_degree | parallel_hint }} INTO {{ owner }}.{{ new_table_name }}
+(
+    {{ column_list }}
+)
+SELECT {{ target_configuration.parallel_degree | parallel_hint }}
+    {{ column_list }}
+FROM {{ owner }}.{{ table_name }}
+WHERE {{ target_configuration.partition_column }} > TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS');
+
+-- Get insert statistics
+BEGIN
+    :v_insert_count := SQL%ROWCOUNT;
+    DBMS_OUTPUT.PUT_LINE('Delta load completed: ' || TO_CHAR(:v_insert_count, '999,999,999,999') || ' rows inserted');
+END;
+/
+
+{% endif %}
+
 COMMIT;
+
+-- Record end time
+BEGIN
+    SELECT TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') INTO :v_end_time FROM dual;
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT_LINE('Delta load finished at: ' || :v_end_time);
+END;
+/
 
 PROMPT ✓ Step 40 Complete: Delta load finished
