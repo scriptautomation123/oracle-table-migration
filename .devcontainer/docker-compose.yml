@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # Oracle Database XE 21c - Optimized for Performance Testing
+  # Oracle Database 23 Free - Optimized for Performance Testing
   oracle:
-    image: gvenzl/oracle-xe:21-slim-faststart
+    image: gvenzl/oracle-free:23-slim-faststart
     container_name: oracle-test-db
     environment:
       # System password
@@ -12,13 +12,6 @@ services:
       # Create HR schema automatically
       APP_USER: hr
       APP_USER_PASSWORD: hr123
-      
-      # Create HR_APP schema via init script
-      ORACLE_DATABASE: XEPDB1
-      
-      # Oracle Performance Tuning
-      ORACLE_CHARACTERSET: AL32UTF8
-      ENABLE_ARCHIVELOG: false
     
     ports:
       - 1521:1521
@@ -26,7 +19,6 @@ services:
     
     volumes:
       - oracle-data:/opt/oracle/oradata
-      - ./init-scripts:/docker-entrypoint-initdb.d/startup
     
     healthcheck:
       test: [CMD-SHELL, healthcheck.sh]
@@ -79,7 +71,7 @@ services:
     environment:
       ORACLE_HOST: oracle
       ORACLE_PORT: 1521
-      ORACLE_SERVICE: XEPDB1
+      ORACLE_SERVICE: FREEPDB1
       ORACLE_USER: hr
       ORACLE_PASSWORD: hr123
       ORACLE_SYS_PASSWORD: Oracle123!
