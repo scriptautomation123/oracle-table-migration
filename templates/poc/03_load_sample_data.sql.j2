@@ -1,0 +1,84 @@
+{#
+==================================================================
+Template: POC Sample Data Loading (Jinja2)
+==================================================================
+Purpose: Load sample data for POC testing
+==================================================================
+#}
+-- ==================================================================
+-- POC SAMPLE DATA LOADING SCRIPT
+-- ==================================================================
+-- Purpose: Load sample data for POC testing
+-- Generated: {{ generation_date }}
+-- Sample Percentage: {{ sample_percentage }}%
+-- Sample Strategy: {{ sample_strategy }}
+-- ==================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON
+SET TIMING ON
+
+PROMPT ================================================================
+PROMPT POC Sample Data Loading
+PROMPT ================================================================
+PROMPT Loading sample data for {{ tables | length }} table(s)
+PROMPT Sample percentage: {{ sample_percentage }}%
+PROMPT Sample strategy: {{ sample_strategy }}
+PROMPT ================================================================
+
+-- Disable constraints for faster loading
+PROMPT Disabling constraints for data loading...
+
+{% for table in tables %}
+{% if table.constraints %}
+-- Disable constraints for {{ table.table_name }}
+{% for constraint in table.constraints %}
+{% if constraint.type in ['P', 'U', 'R'] %}
+ALTER TABLE {{ target_schema }}.{{ table.table_name }} DISABLE CONSTRAINT {{ constraint.name }};
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+-- Load sample data for each table
+{% for table in tables %}
+-- ==================================================================
+-- Loading sample data: {{ table.table_name }}
+-- ==================================================================
+PROMPT Loading {{ table.sample_size }} rows for {{ table.table_name }} ({{ table.sample_percentage | round(2) }}% of {{ table.total_rows }} total rows)...
+
+{% for row in table.sample_data %}
+INSERT INTO {{ target_schema }}.{{ table.table_name }} (
+{%- for column in table.columns %}
+    {{ column }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+) VALUES (
+{%- for column in table.columns %}
+    {% set value = row[column] %}
+    {% if value is none %}NULL{% elif value is string %}'{{ value | replace("'", "''") }}'{% else %}{{ value }}{% endif %}{% if not loop.last %},{% endif %}
+{%- endfor %}
+);
+{% endfor %}
+
+PROMPT ✓ Loaded {{ table.sample_data | length }} rows for {{ table.table_name }}
+{% endfor %}
+
+-- Re-enable constraints
+PROMPT Re-enabling constraints...
+
+{% for table in tables %}
+{% if table.constraints %}
+-- Re-enable constraints for {{ table.table_name }}
+{% for constraint in table.constraints %}
+{% if constraint.type in ['P', 'U', 'R'] %}
+ALTER TABLE {{ target_schema }}.{{ table.table_name }} ENABLE CONSTRAINT {{ constraint.name }};
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+
+COMMIT;
+
+PROMPT ================================================================
+PROMPT Sample data loading completed successfully
+PROMPT ================================================================

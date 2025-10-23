@@ -1,0 +1,82 @@
+{#
+==================================================================
+Template: POC Migration Execution (Jinja2)
+==================================================================
+Purpose: Execute migration scripts for POC testing
+==================================================================
+#}
+-- ==================================================================
+-- POC MIGRATION EXECUTION SCRIPT
+-- ==================================================================
+-- Purpose: Execute migration scripts for POC testing
+-- Generated: {{ generation_date }}
+-- Migration Environment: {{ migration_environment }}
+-- ==================================================================
+
+SET ECHO ON
+SET SERVEROUTPUT ON
+SET TIMING ON
+
+PROMPT ================================================================
+PROMPT POC Migration Execution
+PROMPT ================================================================
+PROMPT Executing migration scripts for {{ tables | length }} table(s)
+PROMPT Migration environment: {{ migration_environment }}
+PROMPT ================================================================
+
+-- Set up migration environment
+PROMPT Setting up migration environment...
+
+-- Set parallel DDL for migration
+ALTER SESSION FORCE PARALLEL DDL PARALLEL {{ parallel_degree }};
+
+-- Set up logging
+PROMPT Starting migration execution at: {{ generation_date }}
+
+{% for table in tables %}
+-- ==================================================================
+-- Migration: {{ table.table_name }}
+-- ==================================================================
+PROMPT Processing migration for {{ table.table_name }}...
+
+-- Step 1: Create new partitioned table
+PROMPT Creating new partitioned table for {{ table.table_name }}...
+@@ 10_create_table.sql
+
+-- Step 2: Load initial data
+PROMPT Loading initial data for {{ table.table_name }}...
+@@ 20_data_load.sql
+
+-- Step 3: Create indexes
+PROMPT Creating indexes for {{ table.table_name }}...
+@@ 30_create_indexes.sql
+
+-- Step 4: Load delta data (if any)
+PROMPT Loading delta data for {{ table.table_name }}...
+@@ 40_delta_load.sql
+
+-- Step 5: Swap tables
+PROMPT Swapping tables for {{ table.table_name }}...
+@@ 50_swap_tables.sql
+
+-- Step 6: Restore grants
+PROMPT Restoring grants for {{ table.table_name }}...
+@@ 60_restore_grants.sql
+
+-- Step 7: Drop old table (optional)
+{% if drop_old_table %}
+PROMPT Dropping old table for {{ table.table_name }}...
+@@ 70_drop_old_table.sql
+{% else %}
+PROMPT Keeping old table for {{ table.table_name }} (drop_old_table=false)
+{% endif %}
+
+PROMPT ✓ Migration completed for {{ table.table_name }}
+{% endfor %}
+
+-- Restore session settings
+ALTER SESSION FORCE PARALLEL DDL PARALLEL 1;
+
+PROMPT ================================================================
+PROMPT Migration execution completed successfully
+PROMPT ================================================================
