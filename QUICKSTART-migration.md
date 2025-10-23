@@ -99,6 +99,7 @@ See `examples/` directory for sample configurations.
 ```sql
 -- Set your block size here (most Oracle DBs use 8192 bytes = 8KB)
 DEFINE block_size = 8192
+DEFINE schema_owner = 'YOUR_SCHEMA_NAME'
 
 SELECT
     obj.segment_name,
@@ -111,7 +112,7 @@ FROM
             'TABLE' AS segment_type,
             NVL(t.blocks,0) AS blocks
         FROM all_tables t
-        WHERE t.owner = UPPER('&owner')
+        WHERE t.owner = UPPER('&schema_owner')
         
         UNION ALL
         
@@ -120,7 +121,7 @@ FROM
             'INDEX' AS segment_type,
             NVL(s.blocks,0) AS blocks
         FROM all_segments s
-        WHERE s.owner = UPPER('&owner')
+        WHERE s.owner = UPPER('&schema_owner')
         AND s.segment_type = 'INDEX'
         
         UNION ALL
@@ -130,7 +131,7 @@ FROM
             'LOB' AS segment_type,
             NVL(s.blocks,0) AS blocks
         FROM all_segments s
-        WHERE s.owner = UPPER('&owner')
+        WHERE s.owner = UPPER('&schema_owner')
         AND s.segment_type = 'LOBSEGMENT'
     ) obj
 GROUP BY
