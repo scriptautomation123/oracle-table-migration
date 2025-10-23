@@ -116,20 +116,22 @@ FROM
         UNION ALL
         
         SELECT 
-            i.table_name,
+            s.segment_name AS table_name,
             'INDEX' AS segment_type,
-            NVL(i.blocks,0) AS blocks
-        FROM all_indexes i
-        WHERE i.table_owner = UPPER('&owner')
+            NVL(s.blocks,0) AS blocks
+        FROM all_segments s
+        WHERE s.owner = UPPER('&owner')
+        AND s.segment_type = 'INDEX'
         
         UNION ALL
         
         SELECT 
-            l.table_name,
+            s.segment_name AS table_name,
             'LOB' AS segment_type,
-            NVL(l.blocks,0) AS blocks
-        FROM all_lobs l
-        WHERE l.owner = UPPER('&owner')
+            NVL(s.blocks,0) AS blocks
+        FROM all_segments s
+        WHERE s.owner = UPPER('&owner')
+        AND s.segment_type = 'LOBSEGMENT'
     ) obj
 GROUP BY
     obj.table_name, obj.segment_type
