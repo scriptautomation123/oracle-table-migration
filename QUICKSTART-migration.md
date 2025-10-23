@@ -98,7 +98,7 @@ See `examples/` directory for sample configurations.
 
 ```sql
 -- Set your block size here (most Oracle DBs use 8192 bytes = 8KB)
-DEFINE block_size = 8192A
+DEFINE block_size = 8192
 
 SELECT
     obj.segment_name,
