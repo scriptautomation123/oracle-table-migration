@@ -101,13 +101,13 @@ See `examples/` directory for sample configurations.
 DEFINE block_size = 8192A
 
 SELECT
-    obj.table_name,
+    obj.segment_name,
     obj.segment_type,
     ROUND(SUM(obj.blocks * &block_size) / (1024*1024*1024), 3) AS spaceused_gb
 FROM
     (
         SELECT 
-            t.table_name,
+            t.table_name AS segment_name,
             'TABLE' AS segment_type,
             NVL(t.blocks,0) AS blocks
         FROM all_tables t
@@ -116,7 +116,7 @@ FROM
         UNION ALL
         
         SELECT 
-            s.segment_name AS table_name,
+            s.segment_name,
             'INDEX' AS segment_type,
             NVL(s.blocks,0) AS blocks
         FROM all_segments s
@@ -126,7 +126,7 @@ FROM
         UNION ALL
         
         SELECT 
-            s.segment_name AS table_name,
+            s.segment_name,
             'LOB' AS segment_type,
             NVL(s.blocks,0) AS blocks
         FROM all_segments s
@@ -134,7 +134,7 @@ FROM
         AND s.segment_type = 'LOBSEGMENT'
     ) obj
 GROUP BY
-    obj.table_name, obj.segment_type
+    obj.segment_name, obj.segment_type
 ORDER BY
-    obj.table_name, obj.segment_type;
+    obj.segment_name, obj.segment_type;
 ```
