@@ -93,3 +93,46 @@ output/
 
 ## Examples
 See `examples/` directory for sample configurations.
+
+
+
+```sql
+-- Set your block size here (most Oracle DBs use 8192 bytes = 8KB)
+DEFINE block_size = 8192A
+
+SELECT
+    obj.table_name,
+    obj.segment_type,
+    ROUND(SUM(obj.blocks * &block_size) / (1024*1024*1024), 3) AS spaceused_gb
+FROM
+    (
+        SELECT 
+            t.table_name,
+            'TABLE' AS segment_type,
+            NVL(t.blocks,0) AS blocks
+        FROM all_tables t
+        WHERE t.owner = UPPER('&owner')
+        
+        UNION ALL
+        
+        SELECT 
+            i.table_name,
+            'INDEX' AS segment_type,
+            NVL(i.blocks,0) AS blocks
+        FROM all_indexes i
+        WHERE i.table_owner = UPPER('&owner')
+        
+        UNION ALL
+        
+        SELECT 
+            l.table_name,
+            'LOB' AS segment_type,
+            NVL(l.blocks,0) AS blocks
+        FROM all_lobs l
+        WHERE l.owner = UPPER('&owner')
+    ) obj
+GROUP BY
+    obj.table_name, obj.segment_type
+ORDER BY
+    obj.table_name, obj.segment_type;
+```
