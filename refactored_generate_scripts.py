@@ -333,8 +333,9 @@ class ValidationCommand(MigrationCommand):
 class GenerationCommand(MigrationCommand):
     """Script generation mode command"""
     
-    def __init__(self, config: MigrationConfig):
+    def __init__(self, config: MigrationConfig, check_database: bool = False):
         self.config = config
+        self.check_database = check_database
         self.stats = MigrationStats()
     
     def execute(self) -> bool:
@@ -533,7 +534,7 @@ def create_command(args: argparse.Namespace) -> MigrationCommand:
     elif args.validate_only:
         return ValidationCommand(config, args.check_database)
     else:
-        return GenerationCommand(config)
+        return GenerationCommand(config, args.check_database)
 
 
 def main() -> None:
