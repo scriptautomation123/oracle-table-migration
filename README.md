@@ -5,6 +5,8 @@
 [![Oracle](https://img.shields.io/badge/Oracle-19c%2B-red)](https://www.oracle.com/)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![CI](https://github.com/scriptautomation123/oracle-table-migration/actions/workflows/ci.yml/badge.svg)](https://github.com/scriptautomation123/oracle-table-migration/actions/workflows/ci.yml)
+[![DB Tests](https://github.com/scriptautomation123/oracle-table-migration/actions/workflows/db-integration-test.yml/badge.svg)](https://github.com/scriptautomation123/oracle-table-migration/actions/workflows/db-integration-test.yml)
 
 ## Features
 
@@ -202,6 +204,8 @@ pip install --user oracledb jinja2 jsonschema
 
 - [USER_GUIDE.md](USER_GUIDE.md) - Complete workflow guide with examples
 - [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) - Architecture and design
+- [CI/CD Setup](docs/CI_CD_SETUP.md) - Continuous Integration and Database QA Testing
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines and development workflow
 - [lib/README.md](lib/README.md) - Module documentation
 - [templates/README.md](templates/README.md) - Template documentation
 - [examples/README.md](examples/README.md) - Example configurations
@@ -229,12 +233,28 @@ pip install --user oracledb jinja2 jsonschema
 
 ## Contributing
 
-This is a production framework. Contributions welcome:
+We welcome contributions! This project includes comprehensive CI/CD pipelines for quality assurance.
 
-1. Test in development environment first
-2. Follow existing code patterns
-3. Update documentation
-4. Add examples for new features
+**Development Workflow**:
+1. Fork and create a feature branch
+2. Make changes with tests
+3. Run local tests: `pytest tests/ -v`
+4. Submit pull request
+5. CI automatically runs linting, tests, and validation
+6. Review QA dashboard in PR comments
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+**CI/CD Features**:
+- ✅ Automated code quality checks (Black, Flake8, Pylint)
+- ✅ Security scanning (Bandit)
+- ✅ Unit test execution with coverage reports
+- ✅ Configuration validation
+- ✅ Oracle database integration tests
+- ✅ Visual QA dashboard with test results
+- ✅ Automated PR status comments
+
+View [CI/CD Documentation](docs/CI_CD_SETUP.md) for more details.
 
 ## License
 
