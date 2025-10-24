@@ -49,15 +49,14 @@ class EnvironmentConfig:
 class EnvironmentConfigManager:
     """Manages environment-specific configuration"""
     
-    def __init__(self, config_dir: str = "config/environments"):
+    def __init__(self, config_file: str = "config.json"):
         """
         Initialize environment configuration manager
         
         Args:
-            config_dir: Directory containing environment configuration files
+            config_file: Path to consolidated configuration file
         """
-        self.config_dir = Path(config_dir)
-        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.config_file = Path(config_file)
         self._configs: Dict[str, EnvironmentConfig] = {}
         self._current_environment: Optional[str] = None
         
@@ -97,40 +96,35 @@ class EnvironmentConfigManager:
         if environment in self._configs:
             return self._configs[environment]
             
-        # Load global config first
-        global_config = self._load_config_file('global.json')
+        # Load consolidated config file
+        if not self.config_file.exists():
+            # Fallback to default config
+            return self._create_default_config(environment)
+            
+        with open(self.config_file, 'r') as f:
+            config_data = json.load(f)
         
-        # Load environment-specific config
-        env_config = self._load_config_file(f'{environment}.json')
+        # Get environment config from consolidated file
+        env_config = config_data.get('environments', {}).get(environment, {})
+        if not env_config:
+            # Try additional_configs if not found in environments
+            env_config = config_data.get('additional_configs', {}).get(environment, {})
         
-        # Merge configurations (environment overrides global)
-        merged_config = self._merge_configs(global_config, env_config)
+        if not env_config:
+            # Fallback to global config
+            env_config = config_data.get('environments', {}).get('global', {})
         
         # Convert to EnvironmentConfig object
-        config_obj = self._parse_config(merged_config)
+        config_obj = self._parse_config(env_config)
         self._configs[environment] = config_obj
         
         return config_obj
     
-    def _load_config_file(self, filename: str) -> Dict[str, Any]:
-        """Load a configuration file"""
-        config_path = self.config_dir / filename
-        
-        if not config_path.exists():
-            if filename == 'global.json':
-                # Create default global config if it doesn't exist
-                return self._create_default_global_config()
-            else:
-                return {}
-                
-        with open(config_path, 'r') as f:
-            return json.load(f)
-    
-    def _create_default_global_config(self) -> Dict[str, Any]:
-        """Create default global configuration"""
-        return {
-            "environment": "global",
-            "description": "Default configuration for all environments",
+    def _create_default_config(self, environment: str) -> EnvironmentConfig:
+        """Create default configuration for environment"""
+        default_config = {
+            "environment": environment,
+            "description": f"Default configuration for {environment} environment",
             "tablespaces": {
                 "data": {
                     "primary": "USERS",
@@ -154,20 +148,11 @@ class EnvironmentConfigManager:
                 "default_degree": 4
             }
         }
-    
-    def _merge_configs(self, global_config: Dict[str, Any], env_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Merge global and environment configurations"""
-        merged = global_config.copy()
         
-        def deep_merge(base: Dict, override: Dict) -> Dict:
-            for key, value in override.items():
-                if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                    base[key] = deep_merge(base[key], value)
-                else:
-                    base[key] = value
-            return base
-            
-        return deep_merge(merged, env_config)
+        config_obj = self._parse_config(default_config)
+        self._configs[environment] = config_obj
+        return config_obj
+    
     
     def _parse_config(self, config: Dict[str, Any]) -> EnvironmentConfig:
         """Parse configuration dictionary into EnvironmentConfig object"""
@@ -288,7 +273,7 @@ class EnvironmentConfigManager:
                                 lob_tablespaces: List[str],
                                 **kwargs) -> None:
         """
-        Create a new environment configuration file
+        Create a new environment configuration in consolidated config file
         
         Args:
             environment: Environment name
@@ -323,11 +308,23 @@ class EnvironmentConfigManager:
             }
         }
         
-        config_path = self.config_dir / f'{environment}.json'
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
+        # Load existing config or create new one
+        if self.config_file.exists():
+            with open(self.config_file, 'r') as f:
+                existing_config = json.load(f)
+        else:
+            existing_config = {"environments": {}, "additional_configs": {}}
         
-        print(f"Created environment configuration: {config_path}")
+        # Add new environment to additional_configs
+        if "additional_configs" not in existing_config:
+            existing_config["additional_configs"] = {}
+        existing_config["additional_configs"][environment] = config
+        
+        # Write back to file
+        with open(self.config_file, 'w') as f:
+            json.dump(existing_config, f, indent=2)
+        
+        print(f"Created environment configuration: {environment} in {self.config_file}")
 
 
 # Example usage and testing

@@ -103,26 +103,55 @@ class TableDiscovery:
         }
 
         # Add environment configuration to metadata
-        env_config = self.env_manager.load_environment_config(self.environment)
-        environment_config = {
-            "name": env_config.environment,
-            "tablespaces": {
-                "data": {
-                    "primary": env_config.tablespaces.primary,
-                    "lob": env_config.tablespaces.lob
+        try:
+            env_config = self.env_manager.load_environment_config(self.environment)
+            environment_config = {
+                "name": env_config.environment,
+                "tablespaces": {
+                    "data": {
+                        "primary": env_config.tablespaces.primary,
+                        "lob": env_config.tablespaces.lob
+                    }
+                },
+                "subpartition_defaults": {
+                    "min_count": env_config.subpartition_defaults.min_count,
+                    "max_count": env_config.subpartition_defaults.max_count,
+                    "size_based_recommendations": env_config.subpartition_defaults.size_based_recommendations
+                },
+                "parallel_defaults": {
+                    "min_degree": env_config.parallel_defaults.min_degree,
+                    "max_degree": env_config.parallel_defaults.max_degree,
+                    "default_degree": env_config.parallel_defaults.default_degree
                 }
-            },
-            "subpartition_defaults": {
-                "min_count": env_config.subpartition_defaults.min_count,
-                "max_count": env_config.subpartition_defaults.max_count,
-                "size_based_recommendations": env_config.subpartition_defaults.size_based_recommendations
-            },
-            "parallel_defaults": {
-                "min_degree": env_config.parallel_defaults.min_degree,
-                "max_degree": env_config.parallel_defaults.max_degree,
-                "default_degree": env_config.parallel_defaults.default_degree
             }
-        }
+        except Exception as e:
+            print(f"Warning: Could not load environment config: {e}")
+            # Use default environment config
+            environment_config = {
+                "name": self.environment,
+                "tablespaces": {
+                    "data": {
+                        "primary": "USERS",
+                        "lob": ["GD_LOB_01", "GD_LOB_02", "GD_LOB_03", "GD_LOB_04"]
+                    }
+                },
+                "subpartition_defaults": {
+                    "min_count": 2,
+                    "max_count": 16,
+                    "size_based_recommendations": {
+                        "small": {"max_gb": 1, "count": 2},
+                        "medium": {"max_gb": 10, "count": 4},
+                        "large": {"max_gb": 50, "count": 8},
+                        "xlarge": {"max_gb": 100, "count": 12},
+                        "xxlarge": {"max_gb": 999999, "count": 16}
+                    }
+                },
+                "parallel_defaults": {
+                    "min_degree": 1,
+                    "max_degree": 8,
+                    "default_degree": 4
+                }
+            }
 
         config = {
             "metadata": self.metadata,
@@ -776,6 +805,15 @@ class TableDiscovery:
         # Get environment-specific tablespaces
         env_tablespaces = self.env_manager.get_tablespaces(self.environment)
         
+        # Calculate subpartition count based on LOB tablespace count (2 per LOB tablespace)
+        lob_tablespace_count = len(env_tablespaces['lob']) if env_tablespaces['lob'] else 0
+        if lob_tablespace_count > 0:
+            # 2 subpartitions per LOB tablespace
+            calculated_subpartition_count = lob_tablespace_count * 2
+        else:
+            # Fallback to environment recommendation
+            calculated_subpartition_count = recommended_hash_count
+        
         target_configuration = {
             "partition_type": "INTERVAL",
             "partition_column": target_partition_column,
@@ -784,7 +822,7 @@ class TableDiscovery:
             "initial_partition_value": "TO_DATE('2024-01-01', 'YYYY-MM-DD')",
             "subpartition_type": "HASH" if target_hash_column else "NONE",
             "subpartition_column": target_hash_column,
-            "subpartition_count": recommended_hash_count,
+            "subpartition_count": calculated_subpartition_count,
             "tablespace": env_tablespaces['data'],
             "lob_tablespaces": env_tablespaces['lob'],
             "parallel_degree": recommended_parallel
@@ -801,22 +839,24 @@ class TableDiscovery:
             if k not in storage_params or storage_params[k] is None:
                 storage_params[k] = ""  # Use empty string if not available
 
-        table_config = {
-            "enabled": should_enable,
-            "owner": self.schema,
-            "table_name": table_name,
-            "new_table_name": f"{table_name}_NEW",
-            "old_table_name": f"{table_name}_OLD",
+        # Enhanced current_state with all metadata details
+        enhanced_current_state = {
+            **current_state,
             "columns": columns_metadata,
             "lob_storage": lob_storage_details,
             "storage_parameters": storage_params,
             "indexes": index_details,
-            "current_state": current_state,
             "available_columns": {
                 "timestamp_columns": timestamp_columns,
                 "numeric_columns": numeric_columns,
                 "string_columns": string_columns
-            },
+            }
+        }
+
+        # Common settings that can be modified
+        common_settings = {
+            "new_table_name": f"{table_name}_NEW",
+            "old_table_name": f"{table_name}_OLD",
             "migration_action": migration_action,
             "target_configuration": target_configuration,
             "migration_settings": {
@@ -826,6 +866,14 @@ class TableDiscovery:
                 "backup_old_table": True,
                 "drop_old_after_days": 7
             }
+        }
+
+        table_config = {
+            "enabled": should_enable,
+            "owner": self.schema,
+            "table_name": table_name,
+            "current_state": enhanced_current_state,
+            "common_settings": common_settings
         }
 
         return table_config

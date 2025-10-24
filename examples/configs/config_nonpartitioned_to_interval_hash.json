@@ -1,6 +1,7 @@
 {
   "metadata": {
     "generated_date": "2025-10-22 11:00:00",
+    "environment": "production",
     "schema": "MYSCHEMA",
     "discovery_criteria": "Schema: MYSCHEMA (non-partitioned tables only)",
     "total_tables_found": 2,

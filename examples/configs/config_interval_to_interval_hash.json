@@ -1,6 +1,7 @@
 {
   "metadata": {
     "generated_date": "2025-10-22 10:30:00",
+    "environment": "development",
     "schema": "MYSCHEMA",
     "discovery_criteria": "Schema: MYSCHEMA, Include: IE_%",
     "total_tables_found": 3,

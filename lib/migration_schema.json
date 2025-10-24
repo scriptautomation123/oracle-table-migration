@@ -22,6 +22,10 @@
           "description": "Oracle schema name",
           "pattern": "^[A-Z][A-Z0-9_$#]*$"
         },
+        "environment": {
+          "type": "string",
+          "description": "Environment name"
+        },
         "discovery_criteria": {
           "type": "string",
           "description": "Criteria used for table discovery"
@@ -39,6 +43,31 @@
       }
     },
 
+    "environment_config": {
+      "type": "object",
+      "description": "Environment-specific configuration",
+      "properties": {
+        "name": {"type": "string"},
+        "tablespaces": {
+          "type": "object",
+          "properties": {
+            "data": {
+              "type": "object",
+              "properties": {
+                "primary": {"type": "string"},
+                "lob": {
+                  "type": "array",
+                  "items": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "subpartition_defaults": {"type": "object"},
+        "parallel_defaults": {"type": "object"}
+      }
+    },
+
     "tables": {
       "type": "array",
       "description": "Array of table configurations",
@@ -51,7 +80,7 @@
   "definitions": {
     "table_config": {
       "type": "object",
-      "required": ["enabled", "owner", "table_name", "current_state", "migration_action", "target_configuration"],
+      "required": ["enabled", "owner", "table_name", "current_state", "common_settings"],
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -70,50 +99,10 @@
           "pattern": "^[A-Z][A-Z0-9_$#]*$"
         },
 
-        "columns": {
-          "type": "array",
-          "description": "Array of column metadata for CREATE TABLE statement",
-          "items": {
-            "type": "object",
-            "required": ["name", "type", "length", "precision", "scale", "nullable", "default", "char_length"],
-            "properties": {
-              "name": { "type": "string", "description": "Column name" },
-              "type": { "type": "string", "description": "Oracle data type" },
-              "length": { "type": ["integer", "null"], "description": "Data length" },
-              "precision": { "type": ["integer", "null"], "description": "Data precision" },
-              "scale": { "type": ["integer", "null"], "description": "Data scale" },
-              "nullable": { "type": "string", "enum": ["Y", "N"], "description": "Whether column allows NULL" },
-              "default": { "type": ["string", "null"], "description": "Default value" },
-              "char_length": { "type": ["integer", "null"], "description": "Character length (for CHAR/VARCHAR2)" }
-            }
-          }
-        },
-
-        "lob_storage": {
-          "type": "array",
-          "description": "LOB storage configuration details",
-          "items": {
-            "type": "object"
-          }
-        },
-
-        "storage_parameters": {
-          "type": "object",
-          "description": "Table storage parameters (compression, pctfree, etc.)"
-        },
-
-        "indexes": {
-          "type": "array",
-          "description": "Index definitions with columns and storage",
-          "items": {
-            "type": "object"
-          }
-        },
-
         "current_state": {
           "type": "object",
-          "description": "Current table state",
-          "required": ["is_partitioned", "partition_type", "size_gb", "row_count"],
+          "description": "Complete current table state with all metadata details",
+          "required": ["is_partitioned", "partition_type", "size_gb", "row_count", "columns", "lob_storage", "storage_parameters", "indexes", "available_columns"],
           "properties": {
             "is_partitioned": {
               "type": "boolean",
@@ -124,56 +113,117 @@
               "enum": ["NONE", "RANGE", "LIST", "HASH", "REFERENCE", "SYSTEM"],
               "description": "Current partition type"
             },
-            "is_interval": {
-              "type": "boolean",
-              "description": "Whether table uses interval partitioning"
-            },
-            "interval_definition": {
-              "type": ["string", "null"],
-              "description": "Current interval definition (Oracle syntax)"
-            },
-            "current_partition_count": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Number of existing partitions"
-            },
-            "current_partition_key": {
-              "type": ["string", "null"],
-              "description": "Current partition key column(s)"
-            },
-            "has_subpartitions": {
-              "type": "boolean",
-              "description": "Whether table has subpartitions"
-            },
-            "subpartition_type": {
-              "type": ["string", "null"],
-              "enum": ["HASH", "LIST", "RANGE", null],
-              "description": "Current subpartition type"
-            },
-            "subpartition_count": {
-              "type": ["integer", "null"],
-              "minimum": 0,
-              "description": "Number of subpartitions per partition"
-            },
             "size_gb": {
               "type": "number",
-              "minimum": 0,
               "description": "Table size in GB"
             },
             "row_count": {
               "type": "integer",
-              "minimum": 0,
               "description": "Approximate row count"
             },
-            "lob_count": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Number of LOB columns"
+            "columns": {
+              "type": "array",
+              "description": "Array of column metadata for CREATE TABLE statement",
+              "items": {
+                "type": "object",
+                "required": ["name", "type", "length", "precision", "scale", "nullable", "default", "char_length"],
+                "properties": {
+                  "name": { "type": "string", "description": "Column name" },
+                  "type": { "type": "string", "description": "Oracle data type" },
+                  "length": { "type": ["integer", "null"], "description": "Data length" },
+                  "precision": { "type": ["integer", "null"], "description": "Data precision" },
+                  "scale": { "type": ["integer", "null"], "description": "Data scale" },
+                  "nullable": { "type": "string", "enum": ["Y", "N"], "description": "Whether column allows NULL" },
+                  "default": { "type": ["string", "null"], "description": "Default value" },
+                  "char_length": { "type": ["integer", "null"], "description": "Character length (for CHAR/VARCHAR2)" }
+                }
+              }
             },
-            "index_count": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Number of indexes"
+            "lob_storage": {
+              "type": "array",
+              "description": "LOB storage configuration details",
+              "items": {
+                "type": "object"
+              }
+            },
+            "storage_parameters": {
+              "type": "object",
+              "description": "Table storage parameters (compression, pctfree, etc.)"
+            },
+            "indexes": {
+              "type": "array",
+              "description": "Index definitions with columns and storage",
+              "items": {
+                "type": "object"
+              }
+            },
+            "available_columns": {
+              "type": "object",
+              "description": "Available columns for partitioning",
+              "properties": {
+                "timestamp_columns": {
+                  "type": "array",
+                  "description": "Timestamp columns suitable for interval partitioning"
+                },
+                "numeric_columns": {
+                  "type": "array", 
+                  "description": "Numeric columns suitable for hash partitioning"
+                },
+                "string_columns": {
+                  "type": "array",
+                  "description": "String columns suitable for hash partitioning"
+                }
+              }
+            }
+          }
+        },
+
+        "common_settings": {
+          "type": "object",
+          "description": "Common configurable settings for migration",
+          "required": ["new_table_name", "old_table_name", "migration_action", "target_configuration", "migration_settings"],
+          "properties": {
+            "new_table_name": {
+              "type": "string",
+              "description": "Name for the new partitioned table"
+            },
+            "old_table_name": {
+              "type": "string", 
+              "description": "Name for the old table backup"
+            },
+            "migration_action": {
+              "type": "string",
+              "description": "Type of migration action to perform"
+            },
+            "target_configuration": {
+              "type": "object",
+              "description": "Target partitioning configuration"
+            },
+            "migration_settings": {
+              "type": "object",
+              "description": "Migration execution settings",
+              "properties": {
+                "estimated_hours": {
+                  "type": "number",
+                  "description": "Estimated migration time in hours"
+                },
+                "priority": {
+                  "type": "string",
+                  "description": "Migration priority level"
+                },
+                "validate_data": {
+                  "type": "boolean",
+                  "description": "Whether to validate data after migration"
+                },
+                "backup_old_table": {
+                  "type": "boolean",
+                  "description": "Whether to backup the old table"
+                },
+                "drop_old_after_days": {
+                  "type": "integer",
+                  "description": "Days to keep old table before dropping"
+                }
+              }
             }
           }
         },
@@ -316,6 +366,11 @@
               "description": "Days to wait before dropping old table (0 = immediate)"
             }
           }
+        },
+
+        "environment": {
+          "type": "string",
+          "description": "Environment name"
         }
       }
     },

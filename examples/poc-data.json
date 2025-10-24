@@ -2,6 +2,7 @@
   "metadata": {
     "poc_name": "ORDERS_MIGRATION_POC",
     "description": "Data sampling configuration for POC testing",
+    "environment": "development",
     "created_date": "2025-01-15 10:00:00",
     "version": "1.0"
   },
