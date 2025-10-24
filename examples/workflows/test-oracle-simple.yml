@@ -1,0 +1,27 @@
+name: Test Oracle Action Simple
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-oracle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Docker in job context
+        run: |
+          echo "=== Docker Check in Job Context ==="
+          which docker
+          docker --version
+
+      - name: Use Oracle Action
+        uses: ./
+        with:
+          oracle-password: OraclePassword123
+          setup-scripts: examples/sql/setup
+          test-scripts: examples/sql/tests

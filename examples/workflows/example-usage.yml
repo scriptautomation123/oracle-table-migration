@@ -1,0 +1,139 @@
+name: Example Oracle DB Test Workflow
+
+# This is an example workflow demonstrating the oracledb-action usage
+# Jobs run sequentially to avoid port conflicts and demonstrate different approaches
+# Note: For the reusable workflow example, you need to set up the ORACLE_PASSWORD secret
+# in your repository settings: Settings > Secrets and variables > Actions
+
+on:
+  # Only run on significant changes to the action itself
+  push:
+    branches: [main]
+    paths:
+      - action.yml
+      - scripts/**
+      - .github/workflows/**
+      - examples/**
+
+  # Test PRs that modify the action
+  pull_request:
+    branches: [main]
+    paths:
+      - action.yml
+      - scripts/**
+      - .github/workflows/**
+      - examples/**
+
+  # Manual trigger for testing
+  workflow_dispatch:
+
+  # Weekly scheduled test to ensure action still works
+  schedule:
+    - cron: 0 6 * * 1
+
+jobs:
+  # Example 1: Using the composite action directly
+  test-with-action:
+    name: Test with Composite Action
+    runs-on: ubuntu-latest
+    # trunk-ignore(checkov/CKV2_GHA_1): Permissions are appropriately scoped
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Oracle Database Tests
+        uses: ./
+        with:
+          oracle-version: 21-slim
+          setup-scripts: examples/sql/setup/*.sql
+          test-scripts: examples/sql/tests/*.sql
+          cleanup-scripts: examples/sql/cleanup/*.sql
+          run-checkov: true
+          fail-on-checkov: false
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            results_*.json
+            checkov_summary.txt
+
+  # Example 2: Using the reusable workflow
+  test-with-reusable-workflow:
+    name: Test with Reusable Workflow
+    needs: test-with-action # Run after the first example
+    permissions:
+      contents: read
+      actions: read
+      security-events: write # Required for reusable workflow that uploads SARIF
+    uses: ./.github/workflows/oracle-db-reusable.yml
+    with:
+      oracle-version: 21-slim
+      setup-scripts: examples/sql/setup/*.sql
+      test-scripts: examples/sql/tests/*.sql
+      cleanup-scripts: examples/sql/cleanup/*.sql
+      run-checkov: true
+    secrets:
+      # Uses default password (OraclePassword123) - customize in consuming repos
+      oracle-password: OraclePassword123
+
+  # Example 3: Matrix testing with multiple Oracle versions
+  test-matrix:
+    name: Test Multiple Versions
+    needs: test-with-reusable-workflow # Run after the second example
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      matrix:
+        oracle-version: [21-slim, 23-slim]
+      max-parallel: 1 # Force sequential execution of matrix jobs
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Oracle DB Tests (v${{ matrix.oracle-version }})
+        uses: ./
+        with:
+          oracle-version: ${{ matrix.oracle-version }}
+          setup-scripts: examples/sql/setup/*.sql
+          test-scripts: examples/sql/tests/*.sql
+          cleanup-scripts: examples/sql/cleanup/*.sql
+
+  # Example 4: Security-focused workflow with Checkov
+  security-scan:
+    name: Security Scan
+    needs: test-matrix # Run after the matrix testing
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # For SARIF upload
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Security Scan
+        uses: ./
+        with:
+          oracle-version: 21-slim
+          setup-scripts: examples/sql/setup/*.sql
+          test-scripts: examples/sql/tests/*.sql
+          run-checkov: true
+          fail-on-checkov: true # Fail if security issues found
+
+      - name: Upload Checkov SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results_sarif.sarif
+        continue-on-error: true

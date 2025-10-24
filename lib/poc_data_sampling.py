@@ -4,8 +4,7 @@ POC Data Sampling Module
 Samples data from QA database for POC testing with referential integrity preservation.
 """
 
-import json
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Any
 from datetime import datetime
 
 
@@ -22,6 +21,15 @@ class POCDataSampling:
             connection: Oracle database connection
         """
         self.connection = connection
+
+    def _is_valid_table_name(self, table_name: str) -> bool:
+        """
+        Validate table name to prevent SQL injection
+        Oracle identifiers can contain letters, digits, _, $, #
+        """
+        import re
+        # Allow only valid Oracle identifier characters
+        return bool(re.match(r'^[A-Za-z][A-Za-z0-9_$#]*$', table_name)) and len(table_name) <= 128
 
     def sample_data(
         self, 
@@ -84,8 +92,12 @@ class POCDataSampling:
         """Sample data for a specific table"""
         cursor = self.connection.cursor()
 
-        # Get table row count
-        count_query = f"SELECT COUNT(*) FROM {table_name}"
+        # Validate table_name to prevent SQL injection
+        if not self._is_valid_table_name(table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
+
+        # Get table row count - using Oracle identifier to prevent injection
+        count_query = f'SELECT COUNT(*) FROM "{table_name}"'  # nosec B608 - table_name is validated
         cursor.execute(count_query)
         total_rows = cursor.fetchone()[0]
 
@@ -94,42 +106,41 @@ class POCDataSampling:
         sample_size = max(1, sample_size)  # At least 1 row
 
         # Generate sample data based on strategy
+        # Using double quotes to properly escape table names
         if sample_strategy == "random":
             sample_query = f"""
                 SELECT * FROM (
-                    SELECT * FROM {table_name}
+                    SELECT * FROM "{table_name}"
                     ORDER BY DBMS_RANDOM.VALUE
                 ) WHERE ROWNUM <= {sample_size}
-            """
+            """  # nosec B608
         elif sample_strategy == "recent":
             # Assume there's a date column - would need to be configured
             sample_query = f"""
                 SELECT * FROM (
-                    SELECT * FROM {table_name}
+                    SELECT * FROM "{table_name}"
                     ORDER BY ROWID DESC
                 ) WHERE ROWNUM <= {sample_size}
-            """
+            """  # nosec B608
         else:
             # Default to random
             sample_query = f"""
                 SELECT * FROM (
-                    SELECT * FROM {table_name}
+                    SELECT * FROM "{table_name}"
                     ORDER BY DBMS_RANDOM.VALUE
                 ) WHERE ROWNUM <= {sample_size}
-            """
+            """  # nosec B608
 
         # Execute sampling query
         cursor.execute(sample_query)
         sample_rows = cursor.fetchall()
 
-        # Get column information
-        column_query = f"""
-            SELECT column_name, data_type
-            FROM all_tab_columns
-            WHERE table_name = UPPER('{table_name}')
-            ORDER BY column_id
-        """
-        cursor.execute(column_query)
+        # Get column information using parameterized query
+        column_query = ("SELECT column_name, data_type "
+                       "FROM all_tab_columns "
+                       "WHERE table_name = UPPER(:table_name) "
+                       "ORDER BY column_id")
+        cursor.execute(column_query, table_name=table_name)
         columns = [row[0] for row in cursor.fetchall()]
 
         cursor.close()
@@ -140,7 +151,7 @@ class POCDataSampling:
             "sample_size": sample_size,
             "sample_percentage": (sample_size / total_rows * 100) if total_rows > 0 else 0,
             "columns": columns,
-            "sample_data": [dict(zip(columns, row)) for row in sample_rows]
+            "sample_data": [dict(zip(columns, row, strict=True)) for row in sample_rows]
         }
 
     def generate_insert_statements(self, sample_data: Dict[str, Any]) -> List[str]:
@@ -155,7 +166,10 @@ class POCDataSampling:
             if not sample_data_rows:
                 continue
 
-            # Generate INSERT statements
+            # Generate INSERT statements with proper escaping
+            if not self._is_valid_table_name(table_name):
+                continue  # Skip invalid table names
+
             for row in sample_data_rows:
                 values = []
                 for column in columns:
@@ -169,10 +183,10 @@ class POCDataSampling:
                     else:
                         values.append(str(value))
 
-                insert_sql = f"""
-INSERT INTO {table_name} ({', '.join(columns)})
-VALUES ({', '.join(values)});
-"""
+                # Use proper Oracle identifier quoting
+                column_list = ', '.join(f'"{col}"' for col in columns)
+                insert_sql = (f'INSERT INTO "{table_name}" ({column_list}) '  # nosec B608
+                             f'VALUES ({", ".join(values)});')
                 insert_statements.append(insert_sql)
 
         return insert_statements

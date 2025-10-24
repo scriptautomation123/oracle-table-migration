@@ -4,7 +4,7 @@ This directory contains example configurations and sample generated outputs to h
 
 ## Structure
 
-```
+```bash
 examples/
 ├── configs/           # Example JSON configurations (input)
 │   ├── config_interval_to_interval_hash.json

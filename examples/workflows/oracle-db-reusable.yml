@@ -1,0 +1,87 @@
+name: Oracle Database CI/CD Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      oracle-version:
+        description: Oracle Database version (e.g., 21-slim, 23-slim, 19-slim)
+        required: false
+        type: string
+        default: 21-slim
+      setup-scripts:
+        description: Path to SQL setup scripts (comma-separated or glob pattern)
+        required: false
+        type: string
+        default: sql/setup/*.sql
+      test-scripts:
+        description: Path to SQL test scripts (comma-separated or glob pattern)
+        required: false
+        type: string
+        default: sql/tests/*.sql
+      cleanup-scripts:
+        description: Path to SQL cleanup scripts (comma-separated or glob pattern)
+        required: false
+        type: string
+        default: sql/cleanup/*.sql
+      run-checkov:
+        description: Run Checkov security scan
+        required: false
+        type: boolean
+        default: true
+      fail-on-checkov:
+        description: Fail the workflow if Checkov finds issues
+        required: false
+        type: boolean
+        default: false
+      working-directory:
+        description: Working directory for the job
+        required: false
+        type: string
+        default: .
+    secrets:
+      oracle-password:
+        description: Password for Oracle Database
+        required: false
+
+jobs:
+  oracle-db-tests:
+    name: Oracle DB Tests (v${{ inputs.oracle-version }})
+    runs-on: ubuntu-latest
+    # trunk-ignore(checkov/CKV2_GHA_1): Permissions are appropriately scoped
+    permissions:
+      contents: read
+      security-events: write # For uploading Checkov SARIF results
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Oracle Database Tests
+        uses: ./
+        with:
+          oracle-version: ${{ inputs.oracle-version }}
+          setup-scripts: ${{ inputs.setup-scripts }}
+          test-scripts: ${{ inputs.test-scripts }}
+          cleanup-scripts: ${{ inputs.cleanup-scripts }}
+          oracle-password: ${{ secrets.oracle-password || 'OraclePassword123' }}
+          run-checkov: ${{ inputs.run-checkov }}
+          fail-on-checkov: ${{ inputs.fail-on-checkov }}
+
+      - name: Upload Checkov Results
+        if: always() && inputs.run-checkov
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-results-${{ inputs.oracle-version }}
+          path: |
+            results_*.json
+            results_*.sarif
+          if-no-files-found: ignore
+
+      - name: Upload Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-test-logs-${{ inputs.oracle-version }}
+          path: |
+            *.log
+          if-no-files-found: ignore

@@ -27,6 +27,15 @@ class POCDDLGenerator:
         self.jinja_env = jinja_env
         self.output_dir = output_dir
 
+    def _is_valid_identifier(self, identifier: str) -> bool:
+        """
+        Validate Oracle identifier to prevent SQL injection
+        Oracle identifiers can contain letters, digits, _, $, #
+        """
+        import re
+        # Allow only valid Oracle identifier characters
+        return bool(re.match(r'^[A-Za-z][A-Za-z0-9_$#]*$', identifier)) and len(identifier) <= 128
+
     def generate_ddl_scripts(
         self, 
         schema_info: Dict[str, Any], 
@@ -380,6 +389,10 @@ PROMPT Grants creation completed
         columns = table_info["columns"]
         sample_data_rows = table_info["sample_data"]
         
+        # Validate table_name to prevent SQL injection
+        if not self._is_valid_identifier(table_name):
+            raise ValueError(f"Invalid table name: {table_name}")
+        
         script_content = f"""-- ==================================================================
 -- POC DATA LOADING: {table_name}
 -- ==================================================================
@@ -395,6 +408,11 @@ PROMPT Loading sample data: {table_name}
 PROMPT ================================================================
 """
 
+        # Validate column names to prevent SQL injection
+        for column in columns:
+            if not self._is_valid_identifier(column):
+                raise ValueError(f"Invalid column name: {column}")
+
         # Generate INSERT statements
         for row in sample_data_rows:
             values = []
@@ -408,7 +426,7 @@ PROMPT ================================================================
                 else:
                     values.append(str(value))
             
-            insert_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join(values)});"
+            insert_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({', '.join(values)});"  # nosec B608
             script_content += insert_sql + "\n"
 
         script_content += f"""

@@ -61,7 +61,7 @@ python3 refactored_generate_scripts.py \
 ```
 
 ## Output Structure
-```
+```bash
 output/
 ├── SOURCE_SCHEMA_TABLE_NAME/
 │   ├── 10_create_table.sql      # Table creation

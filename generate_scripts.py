@@ -47,7 +47,6 @@ except ImportError:
 # Local imports
 from lib.config_validator import ConfigValidator
 from lib.discovery_queries import TableDiscovery
-from lib.migration_validator import MigrationValidator
 from lib.template_filters import register_custom_filters
 
 
@@ -152,14 +151,15 @@ class DatabaseService:
             print("✓ Connected successfully")
             yield self._connection
         except Exception as e:
-            raise DatabaseConnectionError(f"Connection failed: {e}")
+            raise DatabaseConnectionError(f"Connection failed: {e}") from e
         finally:
             if self._connection:
                 try:
                     self._connection.close()
                     print("✓ Database connection closed")
                 except Exception:
-                    pass  # Ignore close errors during cleanup
+                    # Ignore close errors during cleanup as they're not critical
+                    pass
 
 
 class ConfigService:
@@ -184,9 +184,9 @@ class ConfigService:
             return config
             
         except json.JSONDecodeError as e:
-            raise ConfigurationError(f"Invalid JSON in {config_file}: {e}")
+            raise ConfigurationError(f"Invalid JSON in {config_file}: {e}") from e
         except Exception as e:
-            raise ConfigurationError(f"Failed to load configuration: {e}")
+            raise ConfigurationError(f"Failed to load configuration: {e}") from e
     
     def validate_config(self, config: Dict[str, Any], check_database: bool = False) -> bool:
         """Validate configuration"""

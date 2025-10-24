@@ -1,0 +1,104 @@
+name: Release & Full Testing
+
+# Comprehensive testing for releases - runs manually or on tags
+on:
+  # Manual trigger for release preparation
+  workflow_dispatch:
+
+  # Automatic on version tags
+  push:
+    tags:
+      - v*.*.*
+
+# Minimal permissions for release workflow
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  # Full Oracle version matrix testing
+  comprehensive-test:
+    name: Test Oracle ${{ matrix.oracle-version }}
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      actions: read
+
+    strategy:
+      matrix:
+        oracle-version: [19-slim, 21-slim, 23-slim]
+      fail-fast: false
+      max-parallel: 1 # Avoid resource conflicts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Oracle ${{ matrix.oracle-version }}
+        uses: ./
+        with:
+          oracle-version: ${{ matrix.oracle-version }}
+          setup-scripts: examples/sql/setup/*.sql
+          test-scripts: examples/sql/tests/*.sql
+          cleanup-scripts: examples/sql/cleanup/*.sql
+          run-checkov: true
+          sqlplus-commands: |
+            SELECT 'Testing Oracle ' || BANNER FROM V$VERSION WHERE ROWNUM = 1;
+            SELECT COUNT(*) as "Tables Created" FROM USER_TABLES;
+
+  # Security and compliance testing
+  security-scan:
+    name: Security & Compliance
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run comprehensive security scan
+        uses: ./
+        with:
+          oracle-version: 21-slim
+          setup-scripts: examples/sql/setup/01_create_tables.sql
+          run-checkov: true
+          checkov-framework: dockerfile,secrets,yaml
+          fail-on-checkov: true
+
+  # Create release on version tags
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [comprehensive-test, security-scan]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "## Changes" >> CHANGELOG.md
+          git log --oneline --pretty=format:"- %s" $(git describe --tags --abbrev=0 HEAD~1)..HEAD >> CHANGELOG.md
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat CHANGELOG.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha')

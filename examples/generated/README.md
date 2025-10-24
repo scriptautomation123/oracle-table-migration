@@ -23,7 +23,7 @@ This directory will contain generated migration scripts when you run the script 
 
 Each table migration will create a subdirectory with the following scripts:
 
-```
+```bash
 <SCHEMA>_<TABLE_NAME>/
 ├── 10_create_table.sql       # Create new partitioned table
 ├── 20_data_load.sql          # Initial data load

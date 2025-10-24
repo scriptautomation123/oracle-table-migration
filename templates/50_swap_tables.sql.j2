@@ -25,7 +25,6 @@ PROMPT ================================================================
 
 -- Table swap with manual rollback capability
 DECLARE
-    v_active_sessions NUMBER := 0;
     v_swap_success BOOLEAN := FALSE;
     v_error_message VARCHAR2(4000);
     v_constraint_check_required BOOLEAN := {{ migration_settings.constraint_validation | default(true) }};
@@ -33,90 +32,19 @@ DECLARE
     v_disabled_constraints NUMBER := 0;
     v_enabled_constraints NUMBER := 0;
 BEGIN
-    -- Check for active sessions using the table
-    SELECT COUNT(*) INTO v_active_sessions
-    FROM v$session s, v$sqlarea sa
-    WHERE s.sql_id = sa.sql_id
-      AND (UPPER(sa.sql_text) LIKE '%{{ table_name }}%' 
-           OR UPPER(sa.sql_text) LIKE '%{{ new_table_name }}%')
-      AND s.status = 'ACTIVE'
-      AND s.username IS NOT NULL;
+    -- Perform comprehensive table swap validation
+    DBMS_OUTPUT.PUT_LINE('Performing table swap validation...');
+    @validation/table_swap_validation.sql {{ owner }} {{ table_name }} {{ new_table_name }} {{ old_table_name }}
     
-    IF v_active_sessions > 0 THEN
-        RAISE_APPLICATION_ERROR(-20001, 
-            'Cannot swap tables: ' || v_active_sessions || 
-            ' active sessions are using the tables. Please wait for sessions to complete.');
-    END IF;
-    
-    DBMS_OUTPUT.PUT_LINE('✓ No active sessions found - safe to proceed');
-    
-    -- Check constraint states if validation is required
+    -- Handle constraint validation and auto-enable if configured
     IF v_constraint_check_required THEN
-        DBMS_OUTPUT.PUT_LINE('');
-        DBMS_OUTPUT.PUT_LINE('Checking constraint states...');
-        
-        -- Count disabled constraints on original table
-        SELECT COUNT(*) INTO v_disabled_constraints
-        FROM all_constraints
-        WHERE owner = UPPER('{{ owner }}')
-          AND table_name = UPPER('{{ table_name }}')
-          AND constraint_type IN ('U', 'P', 'R', 'C')
-          AND status = 'DISABLED';
-        
-        -- Count enabled constraints on original table
-        SELECT COUNT(*) INTO v_enabled_constraints
-        FROM all_constraints
-        WHERE owner = UPPER('{{ owner }}')
-          AND table_name = UPPER('{{ table_name }}')
-          AND constraint_type IN ('U', 'P', 'R', 'C')
-          AND status = 'ENABLED';
-        
-        DBMS_OUTPUT.PUT_LINE('Original table constraints:');
-        DBMS_OUTPUT.PUT_LINE('  Enabled: ' || v_enabled_constraints);
-        DBMS_OUTPUT.PUT_LINE('  Disabled: ' || v_disabled_constraints);
-        
-        -- Check if constraints are disabled and need to be enabled
-        IF v_disabled_constraints > 0 THEN
-            IF v_auto_enable_constraints THEN
-                DBMS_OUTPUT.PUT_LINE('⚠ Found ' || v_disabled_constraints || ' disabled constraint(s)');
-                DBMS_OUTPUT.PUT_LINE('Auto-enabling constraints before swap...');
-                
-                -- Enable constraints on original table
-                FOR c IN (
-                    SELECT constraint_name
-                    FROM all_constraints
-                    WHERE owner = UPPER('{{ owner }}')
-                      AND table_name = UPPER('{{ table_name }}')
-                      AND constraint_type IN ('U', 'P', 'R', 'C')
-                      AND status = 'DISABLED'
-                    ORDER BY 
-                        CASE constraint_type
-                            WHEN 'P' THEN 1  -- Primary key first
-                            WHEN 'U' THEN 2  -- Unique
-                            WHEN 'C' THEN 3  -- Check
-                            WHEN 'R' THEN 4  -- Foreign keys last
-                        END
-                ) LOOP
-                    BEGIN
-                        EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ table_name }} ENABLE NOVALIDATE CONSTRAINT ' || c.constraint_name;
-                        DBMS_OUTPUT.PUT_LINE('  ✓ Enabled ' || c.constraint_name);
-                    EXCEPTION
-                        WHEN OTHERS THEN
-                            DBMS_OUTPUT.PUT_LINE('  ✗ Failed to enable ' || c.constraint_name || ': ' || SQLERRM);
-                    END;
-                END LOOP;
-                
-                DBMS_OUTPUT.PUT_LINE('✓ Constraint enabling completed');
-            ELSE
-                RAISE_APPLICATION_ERROR(-20004, 
-                    'Cannot swap tables: ' || v_disabled_constraints || 
-                    ' constraint(s) are disabled. Enable constraints first or set auto_enable_constraints=true in migration settings.');
-            END IF;
-        ELSE
-            DBMS_OUTPUT.PUT_LINE('✓ All constraints are enabled - safe to proceed');
-        END IF;
-    ELSE
-        DBMS_OUTPUT.PUT_LINE('⚠ Constraint validation disabled - proceeding without constraint checks');
+        BEGIN
+            @validation/swap_constraint_validation.sql {{ owner }} {{ table_name }} {{ v_auto_enable_constraints }}
+        EXCEPTION
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('Constraint validation failed: ' || SQLERRM);
+                RAISE_APPLICATION_ERROR(-20004, 'Constraint validation failed: ' || SQLERRM);
+        END;
     END IF;
     
     -- Begin table swap (each DDL is independently committed)
@@ -170,21 +98,23 @@ BEGIN
     -- Verify swap was successful
     IF v_swap_success THEN
         DBMS_OUTPUT.PUT_LINE('✓ Table swap completed successfully');
+        
+        -- Perform post-swap validation
+        DBMS_OUTPUT.PUT_LINE('Performing post-swap validation...');
+        @validation/post_swap_validation.sql {{ owner }} {{ table_name }} {{ old_table_name }}
     END IF;
     
 EXCEPTION
     WHEN OTHERS THEN
         DBMS_OUTPUT.PUT_LINE('FATAL ERROR in table swap: ' || SQLERRM);
+        DBMS_OUTPUT.PUT_LINE('Performing rollback validation...');
+        @validation/rollback_validation.sql {{ owner }} {{ table_name }} {{ old_table_name }} {{ new_table_name }}
         RAISE;
 END;
 /
 
 -- Verify final state
 PROMPT Verifying table swap...
-SELECT table_name, partitioned, status
-FROM all_tables
-WHERE owner = '{{ owner }}'
-  AND table_name IN ('{{ table_name }}', '{{ old_table_name }}')
-ORDER BY table_name;
+@validation/verify_table_states.sql {{ owner }} {{ table_name }} {{ old_table_name }}
 
 PROMPT ✓ Step 50 Complete: Tables swapped successfully

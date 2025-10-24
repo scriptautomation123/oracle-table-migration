@@ -1,20 +1,12 @@
 # Migration Script Generator - Supporting Modules# Migration Script Generator - Supporting Modules
 
-
-
 This directory contains the core Python modules that power the table migration framework.This directory contains the core Python modules that power the table migration framework.
 
-
-
 ## Modules## Modules
-
-
 
 ### discovery_queries.py### generate_scripts.py (Main CLI - now at project root)
 
 Database discovery and metadata extraction from Oracle data dictionary.The main script has been moved to the project root for easier access. See `../generate_scripts.py`
-
-
 
 **Key Features:**### discovery_queries.py
 
@@ -74,8 +66,6 @@ Pre-migration and post-migration validation framework.
 
 **Main Class:** `MigrationValidator`Custom Jinja2 filters for SQL generation.
 
-
-
 ### template_filters.py**Custom Filters (12 total):**
 
 Custom Jinja2 filters for SQL generation.- `to_timestamp_format` - Convert interval types to timestamp formats
@@ -116,23 +106,23 @@ JSON Schema definition for migration configurations.```
 
 table_migration/
 
-**Defines:**├── generate_scripts.py        # Main CLI (orchestrator)
+**Defines:**├── generate_scripts.py # Main CLI (orchestrator)
 
-- Required and optional fields├── lib/                        # Supporting modules (this directory)
+- Required and optional fields├── lib/ # Supporting modules (this directory)
 
-- Valid partition types and settings│   ├── discovery_queries.py
+- Valid partition types and settings│ ├── discovery_queries.py
 
-- Migration configuration structure│   ├── config_validator.py
+- Migration configuration structure│ ├── config_validator.py
 
-- Validation rules and constraints│   ├── migration_validator.py
+- Validation rules and constraints│ ├── migration_validator.py
 
-│   ├── template_filters.py
+│ ├── template_filters.py
 
-## Architecture│   └── migration_schema.json
+## Architecture│ └── migration_schema.json
 
-└── templates/                  # Jinja2 SQL templates
+└── templates/ # Jinja2 SQL templates
 
-``````
+````bash
 
 table_migration/
 
@@ -314,19 +304,17 @@ python3 generate_scripts.py --config migration_config.json --validate-pre \# Ins
 
     --connection "user/pass@host:port/service"export LD_LIBRARY_PATH=/path/to/instantclient:$LD_LIBRARY_PATH
 
+````
+
+## Post-migration validation
+
+```bash
+python3 generate_scripts.py --config migration_config.json --validate-post --connection "user/pass@host:port/service"
 ```
 
-# Post-migration validation
+### Grant required privileges
 
-python3 generate_scripts.py --config migration_config.json --validate-post \### Permission Issues
-
-    --connection "user/pass@host:port/service"
-
-``````sql
-
--- Grant required privileges
-
-## Module StatisticsGRANT SELECT ON ALL_TABLES TO username;
+### Module StatisticsGRANT SELECT ON ALL_TABLES TO username
 
 GRANT SELECT ON ALL_TAB_COLUMNS TO username;
 
@@ -344,11 +332,7 @@ GRANT SELECT ON ALL_TAB_COLUMNS TO username;
 
 | **Total** | **2,539** | **3** | **47** | |```
 
-
-
 ## Related Documentation### No Tables Found
-
-
 
 - [USER_GUIDE.md](../USER_GUIDE.md) - Complete workflow guide```sql
 
@@ -359,25 +343,26 @@ GRANT SELECT ON ALL_TAB_COLUMNS TO username;
 - [examples/README.md](../examples/README.md) - Example configurationsFROM all_part_tables
 
 WHERE partitioning_type = 'RANGE'
+AND interval IS NOT NULL;
 
----  AND interval IS NOT NULL;
-
-```
+```bash
 
 **Last Updated**: 2025-10-22
 
 ## Files
 
 ```
+
 02_generator/
 ├── README.md (this file)
-└── generate_scripts.py        (305 lines) - Complete generator
-```
+└── generate_scripts.py (305 lines) - Complete generator
+
+```bash
 
 ## Related Documentation
 
 - **00_discovery/** - Table discovery
-- **01_templates/** - Migration templates  
+- **01_templates/** - Migration templates
 - **03_validation/** - Validation scripts
 - **04_rollback/** - Rollback procedures
 - **05_tables/** - Generated scripts (output)
@@ -385,3 +370,4 @@ WHERE partitioning_type = 'RANGE'
 ---
 
 **Last Updated**: 2025-10-22
+```
