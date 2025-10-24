@@ -8,26 +8,26 @@ services:
     environment:
       # System password
       ORACLE_PASSWORD: Oracle123!
-      
+
       # Create HR schema automatically (will be created in default FREEPDB1)
       APP_USER: hr
       APP_USER_PASSWORD: hr123
-    
+
     ports:
       - 1521:1521
       - 5500:5500
-    
+
     volumes:
       - oracle-data:/opt/oracle/oradata
       - ./init-scripts:/container-entrypoint-initdb.d
-    
+
     healthcheck:
       test: [CMD-SHELL, healthcheck.sh]
       interval: 30s
       timeout: 10s
       retries: 10
       start_period: 90s
-    
+
     # Resource limits optimized for performance testing
     # Works on any Codespace size - allocates more on larger machines
     # For best performance, use 32-core machine (limits scale automatically)
@@ -37,10 +37,10 @@ services:
           memory: 16G
         reservations:
           memory: 4G
-    
+
     # Shared memory for Oracle SGA - critical for performance
     shm_size: 4gb
-    
+
     networks:
       - oracle-network
 
@@ -49,18 +49,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    
+
     container_name: workspace
-    
+
     volumes:
       - ..:/workspace:cached
-    
+
     command: sleep infinity
-    
+
     depends_on:
       oracle:
         condition: service_healthy
-    
+
     # Resource allocation for workspace
     deploy:
       resources:
@@ -68,7 +68,7 @@ services:
           memory: 8G
         reservations:
           memory: 2G
-    
+
     environment:
       ORACLE_HOST: oracle
       ORACLE_PORT: 1521
@@ -77,15 +77,15 @@ services:
       ORACLE_PASSWORD: hr123
       ORACLE_SYS_PASSWORD: Oracle123!
       TNS_ADMIN: /workspace/table_migration/wallets
-      
+
       # Python optimization for performance
       PYTHONUNBUFFERED: 1
       PYTHONDONTWRITEBYTECODE: 1
-      
+
       # Oracle client configuration
       NLS_LANG: AMERICAN_AMERICA.AL32UTF8
       ORA_SDTZ: UTC
-    
+
     networks:
       - oracle-network
 

@@ -148,7 +148,7 @@ table_migration/
 
 ├── output/                     # User's generated scripts
 
-└── rollback/                   # Emergency procedures# Validation
+└── rollback/                   # Emergency procedures
 
 ```validator = ConfigValidator(connection, schema_file='lib/migration_schema.json')
 
@@ -361,11 +361,11 @@ AND interval IS NOT NULL;
 
 ## Related Documentation
 
-- **00_discovery/** - Table discovery
-- **01_templates/** - Migration templates
-- **03_validation/** - Validation scripts
-- **04_rollback/** - Rollback procedures
-- **05_tables/** - Generated scripts (output)
+- **lib/poc_schema_discovery.py** - Table discovery
+- **templates/** - Migration templates
+- **templates/validation/** - Validation scripts
+- **lib/rollback/** - Rollback procedures
+- **output/** - Generated scripts
 
 ---
 

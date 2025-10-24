@@ -215,18 +215,19 @@ ALTER TABLE schema.current_name RENAME TO correct_name;
 ## Files
 
 ```bash
-04_rollback/
+lib/rollback/
 ├── README.md (this file)
-└── emergency_rollback.sql     (340 lines) - Emergency rollback script
+├── emergency_rollback.sql     (271 lines) - Emergency rollback script
+└── output/                    - Rollback output directory
 ```
 
 ## Related Documentation
 
-- **00_discovery/** - Table discovery
-- **01_templates/** - Migration templates
-- **02_generator/** - Script generator
-- **03_validation/** - Validation scripts
-- **05_tables/** - Generated migrations
+- **lib/poc_schema_discovery.py** - Table discovery
+- **templates/** - Migration templates
+- **generate_scripts.py** - Script generator
+- **templates/validation/** - Validation scripts
+- **output/** - Generated migrations
 
 ---
 

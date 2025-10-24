@@ -1,0 +1,46 @@
+name: Oracle Database CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  ORACLE_VERSION: 21-slim
+
+jobs:
+  test:
+    name: Oracle Database Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    strategy:
+      matrix:
+        oracle-version: [21-slim, 23-slim]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Test with Oracle Database
+        uses: scriptautomation123/oracledb-action@main
+        with:
+          oracle-version: ${{ matrix.oracle-version }}
+          setup-scripts: sql/setup/*.sql
+          test-scripts: sql/tests/*.sql
+          cleanup-scripts: sql/cleanup/*.sql
+          oracle-password: ${{ secrets.ORACLE_PASSWORD || 'OraclePassword123' }}
+          wait-timeout: 300
+          run-checkov: true
+          fail-on-checkov: false
+          
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-test-results-${{ matrix.oracle-version }}
+          path: |
+            oracle-test-results/
+            oracle-logs/
