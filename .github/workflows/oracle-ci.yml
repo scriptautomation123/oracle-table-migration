@@ -36,11 +36,11 @@ jobs:
           run-checkov: true
           fail-on-checkov: false
           
-      - name: Upload test results
+      - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: oracle-test-results-${{ matrix.oracle-version }}
+          name: oracle-test-artifacts-${{ matrix.oracle-version }}
           path: |
-            oracle-test-results/
-            oracle-logs/
+            ci_cd_testing/sql/
+            .github/workflows/oracle-ci.yml
