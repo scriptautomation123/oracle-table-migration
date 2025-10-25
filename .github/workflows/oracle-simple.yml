@@ -1,0 +1,85 @@
+name: Oracle Database Tests (Simple)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Oracle Database Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Start Oracle Database
+        run: |
+          echo "🐳 Starting Oracle Database..."
+          docker run -d --name oracle-db -p 1521:1521 -e ORACLE_PASSWORD=OraclePassword123 gvenzl/oracle-free:latest-faststart
+          
+          echo "⏳ Waiting for Oracle Database to be ready..."
+          for i in {1..30}; do
+            if docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE <<< "SELECT 1 FROM DUAL;" > /dev/null 2>&1; then
+              echo "✅ Oracle Database is ready!"
+              break
+            fi
+            echo "⏳ Attempt $i/30 - waiting for Oracle Database..."
+            sleep 3
+          done
+          
+      - name: Run Setup Scripts
+        run: |
+          echo "📋 Running setup scripts..."
+          docker cp ci_cd_testing/sql/setup/01_schema_setup.sql oracle-db:/tmp/setup1.sql
+          docker cp ci_cd_testing/sql/setup/02_test_data.sql oracle-db:/tmp/setup2.sql
+          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE @/tmp/setup1.sql
+          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE @/tmp/setup2.sql
+          
+      - name: Run Test Scripts and Capture Results
+        run: |
+          echo "📊 Running test scripts and capturing results..."
+          mkdir -p test-results
+          
+          # Copy test script to container
+          docker cp ci_cd_testing/sql/tests/01_basic_queries.sql oracle-db:/tmp/test.sql
+          
+          # Run test with SPOOL to capture results
+          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE << 'EOF' > test-results/test_output.txt 2>&1
+          SET PAGESIZE 0
+          SET LINESIZE 1000
+          SET FEEDBACK OFF
+          SET HEADING OFF
+          SET ECHO OFF
+          
+          SPOOL /tmp/test_results.txt
+          @/tmp/test.sql
+          SPOOL OFF
+          
+          EXIT;
+          EOF
+          
+          # Copy the SPOOL file back to host
+          docker cp oracle-db:/tmp/test_results.txt test-results/test_results.txt
+          
+          echo "📄 Test results captured:"
+          echo "=== FULL TEST OUTPUT ==="
+          cat test-results/test_output.txt
+          echo ""
+          echo "=== SPOOLED RESULTS ==="
+          cat test-results/test_results.txt
+          
+      - name: Stop Oracle Database
+        if: always()
+        run: |
+          echo "🛑 Stopping Oracle Database..."
+          docker stop oracle-db || true
+          docker rm oracle-db || true
+          
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oracle-test-results
+          path: |
+            test-results/
