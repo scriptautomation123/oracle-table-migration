@@ -36,14 +36,29 @@ jobs:
           run-checkov: true
           fail-on-checkov: false
           
-      - name: Copy test results
+      - name: Capture test results
         if: always()
         run: |
-          echo "📋 Test Results Available:"
-          find /tmp -name "test_results_*.txt" -exec echo "📄 {}" \; -exec cat {} \;
-          echo "📁 Copying test results to artifacts..."
+          echo "📋 Capturing test results..."
           mkdir -p test-results
-          find /tmp -name "test_results_*.txt" -exec cp {} test-results/ \;
+          
+          # Run SQL*Plus to capture output with SPOOL
+          sqlplus -s system/OraclePassword123@localhost:1521/XE << 'EOF' > test-results/01_basic_queries_results.txt 2>&1
+          SET PAGESIZE 0
+          SET LINESIZE 1000
+          SET FEEDBACK OFF
+          SET HEADING OFF
+          SET ECHO OFF
+          
+          SPOOL test-results/01_basic_queries_spool.txt
+          @ci_cd_testing/sql/tests/01_basic_queries.sql
+          SPOOL OFF
+          
+          EXIT;
+          EOF
+          
+          echo "📄 Test results saved to:"
+          find test-results -name "*.txt" -exec echo "  📄 {}" \; -exec cat {} \;
           
       - name: Upload test artifacts
         if: always()
