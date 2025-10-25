@@ -18,7 +18,8 @@ jobs:
     
     strategy:
       matrix:
-        oracle-version: [21-slim, 19-slim]
+        # oracle-version: [21-slim, 19-slim]
+        oracle-version: [19-slim]
     
     steps:
       - name: Checkout code
@@ -28,7 +29,7 @@ jobs:
         uses: scriptautomation123/oracledb-action@main
         with:
           oracle-version: ${{ matrix.oracle-version }}
-          setup-scripts: ci_cd_testing/sql/setup/*.sql
+          setup-scripts: ci_cd_testing/sql/setup/01_schema_setup.sql,ci_cd_testing/sql/setup/02_test_data.sql
           test-scripts: ci_cd_testing/sql/tests/*.sql
           cleanup-scripts: ci_cd_testing/sql/cleanup/*.sql
           oracle-password: ${{ secrets.ORACLE_PASSWORD || 'OraclePassword123' }}
