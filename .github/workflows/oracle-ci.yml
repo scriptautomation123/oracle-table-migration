@@ -36,15 +36,6 @@ jobs:
           run-checkov: true
           fail-on-checkov: false
           
-      - name: Copy test results
-        if: always()
-        run: |
-          echo "📋 Test Results Available:"
-          find /tmp -name "test_results_*.txt" -exec echo "📄 {}" \; -exec cat {} \;
-          echo "📁 Copying test results to artifacts..."
-          mkdir -p test-results
-          find /tmp -name "test_results_*.txt" -exec cp {} test-results/ \;
-          
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -52,5 +43,4 @@ jobs:
           name: oracle-test-artifacts-${{ matrix.oracle-version }}
           path: |
             ci_cd_testing/sql/
-            test-results/
             .github/workflows/oracle-ci.yml
