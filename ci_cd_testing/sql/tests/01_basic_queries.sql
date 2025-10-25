@@ -1,5 +1,8 @@
 -- Basic query tests for Oracle database
--- Results will be visible in GitHub Actions logs
+-- SPOOL results to file for download
+
+-- Set output file
+SPOOL /tmp/test_results_01_basic_queries.txt
 
 -- Test header
 SELECT '=== BASIC QUERY TESTS ===' as test_header FROM DUAL;
@@ -42,3 +45,5 @@ ORDER BY status;
 -- Test footer
 SELECT '=== TESTS COMPLETED ===' as test_footer FROM DUAL;
 SELECT 'Test completed at: ' || TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS') as timestamp FROM DUAL;
+
+SPOOL OFF
