@@ -28,9 +28,9 @@ jobs:
         uses: scriptautomation123/oracledb-action@main
         with:
           oracle-version: ${{ matrix.oracle-version }}
-          setup-scripts: sql/setup/*.sql
-          test-scripts: sql/tests/*.sql
-          cleanup-scripts: sql/cleanup/*.sql
+          setup-scripts: ci_cd_testing/sql/setup/*.sql
+          test-scripts: ci_cd_testing/sql/tests/*.sql
+          cleanup-scripts: ci_cd_testing/sql/cleanup/*.sql
           oracle-password: ${{ secrets.ORACLE_PASSWORD || 'OraclePassword123' }}
           wait-timeout: 300
           run-checkov: true
