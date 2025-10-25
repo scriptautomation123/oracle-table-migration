@@ -259,7 +259,7 @@ run_github_workflow() {
                 analyze_github_failure "$run_id"
                 return 1
                 ;;
-            "in_progress:null"|"queued:null")
+            "in_progress:"*|"queued:"*)
                 log_info "⏳ Workflow is running... (${elapsed}s elapsed)"
                 sleep 10
                 ;;
