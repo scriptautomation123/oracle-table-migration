@@ -18,8 +18,7 @@ jobs:
     
     strategy:
       matrix:
-        # oracle-version: [21-slim, 19-slim]
-        oracle-version: [19-slim]
+        oracle-version: [latest-faststart]
     
     steps:
       - name: Checkout code
