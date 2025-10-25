@@ -18,7 +18,7 @@ jobs:
     
     strategy:
       matrix:
-        oracle-version: [21-slim, 23-slim]
+        oracle-version: [21-slim, 19-slim]
     
     steps:
       - name: Checkout code
