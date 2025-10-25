@@ -27,7 +27,7 @@ jobs:
           
           echo "⏳ Waiting for Oracle Database to be ready..."
           for i in {1..60}; do
-            if docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE <<< "SELECT 1 FROM DUAL;" > /dev/null 2>&1; then
+            if docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/FREEPDB1 <<< "SELECT 1 FROM DUAL;" > /dev/null 2>&1; then
               echo "✅ Oracle Database is ready!"
               break
             fi
@@ -38,8 +38,10 @@ jobs:
       - name: Run Setup Scripts
         run: |
           echo "📋 Running setup scripts..."
-          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE @/workspace/ci_cd_testing/sql/setup/01_schema_setup.sql
-          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE @/workspace/ci_cd_testing/sql/setup/02_test_data.sql
+          docker cp ci_cd_testing/sql/setup/01_schema_setup.sql oracle-db:/tmp/setup1.sql
+          docker cp ci_cd_testing/sql/setup/02_test_data.sql oracle-db:/tmp/setup2.sql
+          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/FREEPDB1 @/tmp/setup1.sql
+          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/FREEPDB1 @/tmp/setup2.sql
           
       - name: Run Test Scripts with SPOOL
         run: |
@@ -49,7 +51,7 @@ jobs:
           # Copy test script to container and run with SPOOL
           docker cp ci_cd_testing/sql/tests/01_basic_queries_with_spool.sql oracle-db:/tmp/test.sql
           
-          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE << 'EOF'
+          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/FREEPDB1 << 'EOF'
           SET PAGESIZE 0
           SET LINESIZE 1000
           SET FEEDBACK OFF
@@ -73,7 +75,8 @@ jobs:
         if: always()
         run: |
           echo "🧹 Running cleanup scripts..."
-          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/XE @/workspace/ci_cd_testing/sql/cleanup/01_cleanup_all.sql || true
+          docker cp ci_cd_testing/sql/cleanup/01_cleanup_all.sql oracle-db:/tmp/cleanup.sql
+          docker exec oracle-db sqlplus -s system/OraclePassword123@localhost:1521/FREEPDB1 @/tmp/cleanup.sql || true
           
       - name: Stop Oracle Database
         if: always()
