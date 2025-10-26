@@ -1,0 +1,761 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oracle-migration.com/migration-config.schema.json",
+  "title": "Oracle Table Migration Configuration - Schema Driven",
+  "description": "Comprehensive schema for Oracle table migration supporting all partition types and Oracle features",
+  "type": "object",
+  "required": ["metadata", "environment_config", "tables"],
+
+  "x-code-generation": {
+    "python": {
+      "module_name": "generated_models",
+      "base_imports": [
+        "from dataclasses import dataclass, field, asdict",
+        "from typing import List, Optional, Dict, Any, Union",
+        "from enum import Enum",
+        "import json",
+        "from datetime import datetime"
+      ]
+    }
+  },
+
+  "properties": {
+    "metadata": {
+      "$ref": "#/definitions/Metadata"
+    },
+    "environment_config": {
+      "$ref": "#/definitions/EnvironmentConfig"
+    },
+    "tables": {
+      "type": "array",
+      "description": "Array of table configurations",
+      "items": {
+        "$ref": "#/definitions/TableConfig"
+      }
+    }
+  },
+
+  "definitions": {
+    "Metadata": {
+      "type": "object",
+      "description": "Metadata about the migration configuration",
+      "required": ["generated_date", "source_schema"],
+      "properties": {
+        "generated_date": {
+          "type": "string",
+          "description": "Date and time when configuration was generated",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}$"
+        },
+        "environment": {
+          "type": "string",
+          "description": "Environment name (dev, test, prod)",
+          "default": "global"
+        },
+        "source_schema": {
+          "type": "string",
+          "description": "Oracle schema name being analyzed",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "source_database_service": {
+          "type": "string",
+          "description": "Oracle database service name"
+        },
+        "source_connection_details": {
+          "$ref": "#/definitions/ConnectionDetails"
+        },
+        "discovery_criteria": {
+          "type": "string",
+          "description": "Criteria used for table discovery"
+        },
+        "total_tables_found": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of tables discovered"
+        },
+        "tables_selected_for_migration": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of tables enabled for migration"
+        },
+        "schema": {
+          "type": "string",
+          "description": "Alias for source_schema for backward compatibility"
+        }
+      }
+    },
+
+    "ConnectionDetails": {
+      "type": "object",
+      "description": "Database connection details for metadata tracking",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["Service Name", "SID", "Easy Connect"],
+          "description": "Oracle connection type"
+        },
+        "host": {
+          "type": "string",
+          "description": "Database host"
+        },
+        "port": {
+          "type": "string",
+          "description": "Database port"
+        },
+        "service": {
+          "type": "string",
+          "description": "Oracle service name or SID"
+        },
+        "user": {
+          "type": "string",
+          "description": "Database user"
+        }
+      }
+    },
+
+    "EnvironmentConfig": {
+      "type": "object",
+      "description": "Environment-specific configuration for tablespaces and defaults",
+      "required": ["name", "tablespaces"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Environment name"
+        },
+        "tablespaces": {
+          "$ref": "#/definitions/DataTablespaces"
+        },
+        "subpartition_defaults": {
+          "$ref": "#/definitions/SubpartitionDefaults"
+        },
+        "parallel_defaults": {
+          "$ref": "#/definitions/ParallelDefaults"
+        }
+      }
+    },
+
+    "DataTablespaces": {
+      "type": "object",
+      "description": "Tablespace configuration for data and LOB storage",
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/TablespaceConfig"
+        }
+      }
+    },
+
+    "TablespaceConfig": {
+      "type": "object",
+      "description": "Tablespace names for data and LOB storage",
+      "properties": {
+        "primary": {
+          "type": "string",
+          "description": "Primary tablespace for table data"
+        },
+        "lob": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of LOB tablespaces"
+        }
+      }
+    },
+
+    "SubpartitionDefaults": {
+      "type": "object",
+      "description": "Default settings for subpartitioning",
+      "properties": {
+        "min_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum subpartition count"
+        },
+        "max_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum subpartition count"
+        },
+        "size_based_recommendations": {
+          "type": "object",
+          "description": "Size-based subpartition recommendations"
+        }
+      }
+    },
+
+    "ParallelDefaults": {
+      "type": "object",
+      "description": "Default parallel execution settings",
+      "properties": {
+        "min_degree": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum parallel degree"
+        },
+        "max_degree": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum parallel degree"
+        },
+        "default_degree": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Default parallel degree"
+        }
+      }
+    },
+
+    "TableConfig": {
+      "type": "object",
+      "description": "Complete table configuration for migration",
+      "required": ["enabled", "owner", "table_name", "current_state", "common_settings"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this table should be migrated"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Table owner (schema)",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "table_name": {
+          "type": "string",
+          "description": "Table name",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "current_state": {
+          "$ref": "#/definitions/CurrentState"
+        },
+        "common_settings": {
+          "$ref": "#/definitions/CommonSettings"
+        }
+      }
+    },
+
+    "CurrentState": {
+      "type": "object",
+      "description": "Complete current table state with all Oracle metadata",
+      "required": [
+        "is_partitioned", "partition_type", "size_gb", "row_count", 
+        "lob_count", "index_count", "columns", "lob_storage", 
+        "storage_parameters", "indexes", "available_columns"
+      ],
+      "properties": {
+        "is_partitioned": {
+          "type": "boolean",
+          "description": "Whether table is currently partitioned"
+        },
+        "partition_type": {
+          "$ref": "#/definitions/PartitionTypeEnum"
+        },
+        "size_gb": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Table size in GB"
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Approximate row count"
+        },
+        "lob_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of LOB columns"
+        },
+        "index_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of indexes"
+        },
+        "columns": {
+          "type": "array",
+          "description": "Complete column metadata for DDL generation",
+          "items": {
+            "$ref": "#/definitions/ColumnInfo"
+          }
+        },
+        "lob_storage": {
+          "type": "array",
+          "description": "LOB storage configuration details",
+          "items": {
+            "$ref": "#/definitions/LobStorageInfo"
+          }
+        },
+        "storage_parameters": {
+          "$ref": "#/definitions/StorageParameters"
+        },
+        "indexes": {
+          "type": "array",
+          "description": "Index definitions with columns and storage",
+          "items": {
+            "$ref": "#/definitions/IndexInfo"
+          }
+        },
+        "available_columns": {
+          "$ref": "#/definitions/AvailableColumns"
+        },
+        "is_interval": {
+          "type": "boolean",
+          "description": "Whether table uses interval partitioning"
+        },
+        "interval_definition": {
+          "type": "string",
+          "description": "Current interval definition if applicable"
+        },
+        "current_partition_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Current number of partitions"
+        },
+        "current_partition_key": {
+          "type": "string",
+          "description": "Current partition key column(s)"
+        },
+        "has_subpartitions": {
+          "type": "boolean",
+          "description": "Whether table has subpartitions"
+        },
+        "subpartition_type": {
+          "type": "string",
+          "description": "Current subpartition type if applicable"
+        },
+        "subpartition_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Current number of subpartitions per partition"
+        }
+      }
+    },
+
+    "ColumnInfo": {
+      "type": "object",
+      "description": "Complete column metadata for Oracle DDL generation",
+      "required": ["name", "type", "nullable"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Column name",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Oracle data type (VARCHAR2, NUMBER, etc.)"
+        },
+        "length": {
+          "type": ["integer", "null"],
+          "description": "Data length for VARCHAR2, etc."
+        },
+        "precision": {
+          "type": ["integer", "null"],
+          "description": "Numeric precision"
+        },
+        "scale": {
+          "type": ["integer", "null"],
+          "description": "Numeric scale"
+        },
+        "nullable": {
+          "$ref": "#/definitions/YesNoEnum"
+        },
+        "default": {
+          "type": ["string", "null"],
+          "description": "Default value expression"
+        },
+        "char_length": {
+          "type": ["integer", "null"],
+          "description": "Character length for CHAR/VARCHAR2"
+        },
+        "is_identity": {
+          "type": "boolean",
+          "description": "Whether column is an identity column",
+          "default": false
+        },
+        "identity_generation": {
+          "type": ["string", "null"],
+          "enum": ["ALWAYS", "BY DEFAULT", null],
+          "description": "Identity generation type"
+        },
+        "identity_sequence": {
+          "type": ["string", "null"],
+          "description": "Associated sequence name for identity"
+        },
+        "identity_start_with": {
+          "type": ["integer", "null"],
+          "description": "Identity START WITH value"
+        },
+        "identity_increment_by": {
+          "type": ["integer", "null"],
+          "description": "Identity INCREMENT BY value"
+        },
+        "identity_max_value": {
+          "type": ["integer", "null"],
+          "description": "Identity MAXVALUE"
+        },
+        "identity_min_value": {
+          "type": ["integer", "null"],
+          "description": "Identity MINVALUE"
+        },
+        "identity_cache_size": {
+          "type": ["integer", "null"],
+          "description": "Identity CACHE size"
+        },
+        "identity_cycle_flag": {
+          "type": ["string", "null"],
+          "enum": ["Y", "N", null],
+          "description": "Identity CYCLE flag"
+        },
+        "identity_order_flag": {
+          "type": ["string", "null"],
+          "enum": ["Y", "N", null],
+          "description": "Identity ORDER flag"
+        }
+      }
+    },
+
+    "LobStorageInfo": {
+      "type": "object",
+      "description": "LOB storage configuration for Oracle DDL",
+      "required": ["column_name", "tablespace_name"],
+      "properties": {
+        "column_name": {
+          "type": "string",
+          "description": "LOB column name"
+        },
+        "segment_name": {
+          "type": "string",
+          "description": "LOB segment name"
+        },
+        "tablespace_name": {
+          "type": "string",
+          "description": "LOB tablespace"
+        },
+        "original_tablespace": {
+          "type": "string",
+          "description": "Original LOB tablespace"
+        },
+        "securefile": {
+          "$ref": "#/definitions/YesNoEnum"
+        },
+        "compression": {
+          "$ref": "#/definitions/YesNoEnum"
+        },
+        "deduplication": {
+          "$ref": "#/definitions/YesNoEnum"
+        },
+        "in_row": {
+          "$ref": "#/definitions/YesNoEnum"
+        },
+        "chunk": {
+          "type": "integer",
+          "description": "LOB chunk size"
+        },
+        "cache": {
+          "$ref": "#/definitions/YesNoEnum"
+        }
+      }
+    },
+
+    "StorageParameters": {
+      "type": "object",
+      "description": "Oracle table storage parameters",
+      "properties": {
+        "compression": {
+          "type": "string",
+          "enum": ["ENABLED", "DISABLED", "BASIC", "ADVANCED"],
+          "description": "Table compression setting",
+          "default": "DISABLED"
+        },
+        "compress_for": {
+          "type": "string",
+          "description": "Compression type details"
+        },
+        "pct_free": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99,
+          "description": "PCTFREE storage parameter",
+          "default": 10
+        },
+        "ini_trans": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "INITRANS storage parameter",
+          "default": 1
+        },
+        "max_trans": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "MAXTRANS storage parameter",
+          "default": 255
+        },
+        "initial_extent": {
+          "type": ["integer", "null"],
+          "description": "Initial extent size in bytes"
+        },
+        "next_extent": {
+          "type": ["integer", "null"],
+          "description": "Next extent size in bytes"
+        },
+        "buffer_pool": {
+          "type": "string",
+          "enum": ["DEFAULT", "KEEP", "RECYCLE"],
+          "description": "Buffer pool assignment",
+          "default": "DEFAULT"
+        }
+      }
+    },
+
+    "IndexInfo": {
+      "type": "object",
+      "description": "Oracle index definition with storage details",
+      "required": ["index_name", "index_type", "columns"],
+      "properties": {
+        "index_name": {
+          "type": "string",
+          "description": "Index name"
+        },
+        "index_type": {
+          "type": "string",
+          "enum": ["NORMAL", "BITMAP", "FUNCTION-BASED NORMAL", "FUNCTION-BASED BITMAP"],
+          "description": "Oracle index type"
+        },
+        "uniqueness": {
+          "type": "string",
+          "enum": ["UNIQUE", "NONUNIQUE"],
+          "description": "Index uniqueness"
+        },
+        "tablespace_name": {
+          "type": "string",
+          "description": "Index tablespace"
+        },
+        "compression": {
+          "type": "string",
+          "enum": ["ENABLED", "DISABLED"],
+          "description": "Index compression"
+        },
+        "pct_free": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99,
+          "description": "Index PCTFREE"
+        },
+        "ini_trans": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "Index INITRANS"
+        },
+        "max_trans": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "description": "Index MAXTRANS"
+        },
+        "degree": {
+          "type": "string",
+          "description": "Parallel degree for index operations"
+        },
+        "partitioned": {
+          "$ref": "#/definitions/YesNoEnum"
+        },
+        "columns": {
+          "type": "string",
+          "description": "Comma-separated list of index columns"
+        },
+        "is_reverse": {
+          "type": "boolean",
+          "description": "Whether index is reverse key",
+          "default": false
+        },
+        "locality": {
+          "type": ["string", "null"],
+          "enum": ["LOCAL", "GLOBAL", null],
+          "description": "Partitioned index locality"
+        }
+      }
+    },
+
+    "AvailableColumns": {
+      "type": "object",
+      "description": "Columns available for different partitioning strategies",
+      "properties": {
+        "timestamp_columns": {
+          "type": "array",
+          "description": "Timestamp/date columns suitable for interval partitioning",
+          "items": {
+            "$ref": "#/definitions/ColumnInfo"
+          }
+        },
+        "numeric_columns": {
+          "type": "array",
+          "description": "Numeric columns suitable for hash/range partitioning",
+          "items": {
+            "$ref": "#/definitions/ColumnInfo"
+          }
+        },
+        "string_columns": {
+          "type": "array",
+          "description": "String columns suitable for hash/list partitioning",
+          "items": {
+            "$ref": "#/definitions/ColumnInfo"
+          }
+        }
+      }
+    },
+
+    "CommonSettings": {
+      "type": "object",
+      "description": "Common configurable settings for table migration",
+      "required": ["new_table_name", "old_table_name", "migration_action", "target_configuration", "migration_settings"],
+      "properties": {
+        "new_table_name": {
+          "type": "string",
+          "description": "Name for the new partitioned table"
+        },
+        "old_table_name": {
+          "type": "string",
+          "description": "Name for the old table backup"
+        },
+        "migration_action": {
+          "$ref": "#/definitions/MigrationActionEnum"
+        },
+        "target_configuration": {
+          "$ref": "#/definitions/TargetConfiguration"
+        },
+        "migration_settings": {
+          "$ref": "#/definitions/MigrationSettings"
+        }
+      }
+    },
+
+    "TargetConfiguration": {
+      "type": "object",
+      "description": "Target partitioning configuration for Oracle tables",
+      "required": ["partition_type"],
+      "properties": {
+        "partition_type": {
+          "$ref": "#/definitions/PartitionTypeEnum"
+        },
+        "partition_column": {
+          "type": ["string", "null"],
+          "description": "Column to partition on",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "interval_type": {
+          "$ref": "#/definitions/IntervalTypeEnum"
+        },
+        "interval_value": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 999,
+          "description": "Interval value (e.g., 1 for 1 month)",
+          "default": 1
+        },
+        "initial_partition_value": {
+          "type": "string",
+          "description": "Initial partition boundary (Oracle TO_DATE format)",
+          "pattern": "^TO_DATE\\('.*', '.*'\\)$"
+        },
+        "subpartition_type": {
+          "$ref": "#/definitions/SubpartitionTypeEnum"
+        },
+        "subpartition_column": {
+          "type": ["string", "null"],
+          "description": "Column to subpartition on",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "subpartition_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024,
+          "description": "Number of hash subpartitions (power of 2 recommended)"
+        },
+        "tablespace": {
+          "type": "string",
+          "description": "Primary tablespace name",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$"
+        },
+        "lob_tablespaces": {
+          "type": "array",
+          "description": "LOB tablespace names",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_$#]*$"
+          }
+        },
+        "parallel_degree": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128,
+          "description": "Parallel degree for migration operations"
+        }
+      }
+    },
+
+    "MigrationSettings": {
+      "type": "object",
+      "description": "Migration execution and validation settings",
+      "properties": {
+        "validate_data": {
+          "type": "boolean",
+          "description": "Whether to validate data after migration",
+          "default": true
+        },
+        "backup_old_table": {
+          "type": "boolean",
+          "description": "Whether to keep old table as backup",
+          "default": true
+        },
+        "drop_old_after_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Days to wait before dropping old table (0 = immediate)",
+          "default": 7
+        }
+      }
+    },
+
+    "PartitionTypeEnum": {
+      "type": "string",
+      "enum": ["NONE", "RANGE", "LIST", "HASH", "REFERENCE", "SYSTEM", "INTERVAL"],
+      "description": "Oracle partition types"
+    },
+
+    "IntervalTypeEnum": {
+      "type": "string",
+      "enum": ["HOUR", "DAY", "WEEK", "MONTH", "YEAR"],
+      "description": "Interval partitioning granularities"
+    },
+
+    "SubpartitionTypeEnum": {
+      "type": "string",
+      "enum": ["HASH", "LIST", "RANGE", "NONE"],
+      "description": "Oracle subpartition types"
+    },
+
+    "MigrationActionEnum": {
+      "type": "string",
+      "enum": [
+        "convert_interval_to_interval_hash",
+        "add_interval_hash_partitioning", 
+        "add_interval_partitioning",
+        "add_hash_subpartitions",
+        "convert_to_interval_hash",
+        "add_range_partitioning",
+        "add_list_partitioning",
+        "add_hash_partitioning",
+        "convert_range_to_interval",
+        "add_composite_partitioning"
+      ],
+      "description": "Types of migration actions supported"
+    },
+
+    "YesNoEnum": {
+      "type": "string",
+      "enum": ["Y", "N", "YES", "NO"],
+      "description": "Oracle Yes/No flags"
+    }
+  }
+}

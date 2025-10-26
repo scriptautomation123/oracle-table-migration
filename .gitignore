@@ -11,16 +11,20 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
 
-# IDE
-.vscode/
+# Logs and temporary files
+*.log
+discovery_output/
+test-review*.txt
+
+# IDE and development tools
+.vscode/settings.json
 .idea/
 *.swp
 *.swo
+.trunk/
 
 # OS
 .DS_Store
 Thumbs.db
-/.trunk
-/docs
-/.venv

@@ -18,36 +18,44 @@ PROMPT ================================================================
 PROMPT Step 60: Restoring Grants
 PROMPT ================================================================
 
--- Dynamically grant privileges from old table to new table with error handling
+-- Restore grants using captured grant information from config.json
 DECLARE
     v_grant_count NUMBER := 0;
     v_failed_count NUMBER := 0;
     v_total_grants NUMBER := 0;
     v_error_message VARCHAR2(4000);
+    v_grant_stmt VARCHAR2(4000);
 BEGIN
-    -- Count total grants to process
-    v_total_grants := {{ grant_statements | length if grant_statements else 0 }};
-    DBMS_OUTPUT.PUT_LINE('Processing ' || v_total_grants || ' grant statements...');
+    -- Count total grants to process from captured grants
+    v_total_grants := {{ current_state.grants | length if current_state.grants else 0 }};
+    DBMS_OUTPUT.PUT_LINE('Processing ' || v_total_grants || ' grant statements from captured configuration...');
     DBMS_OUTPUT.PUT_LINE('');
     
-    {% if grant_statements and grant_statements | length > 0 %}
-    -- Process each grant statement
-    {% for grant in grant_statements %}
+    {% if current_state.grants and current_state.grants | length > 0 %}
+    -- Process each captured grant
+    {% for grant in current_state.grants %}
     BEGIN
-        DBMS_OUTPUT.PUT_LINE('Executing: {{ grant }}');
-        EXECUTE IMMEDIATE '{{ grant }}';
+        -- Build grant statement from captured information
+        v_grant_stmt := 'GRANT {{ grant.privilege }} ON {{ owner }}.{{ table_name }} TO {{ grant.grantee }}';
+        {% if grant.grantable == 'YES' %}
+        v_grant_stmt := v_grant_stmt || ' WITH GRANT OPTION';
+        {% endif %}
+        
+        DBMS_OUTPUT.PUT_LINE('Executing: ' || v_grant_stmt);
+        EXECUTE IMMEDIATE v_grant_stmt;
         v_grant_count := v_grant_count + 1;
-        DBMS_OUTPUT.PUT_LINE('✓ Grant successful');
+        DBMS_OUTPUT.PUT_LINE('✓ Grant successful: {{ grant.privilege }} to {{ grant.grantee }}');
     EXCEPTION
         WHEN OTHERS THEN
             v_failed_count := v_failed_count + 1;
             v_error_message := SQLERRM;
             DBMS_OUTPUT.PUT_LINE('✗ Grant failed: ' || v_error_message);
-            DBMS_OUTPUT.PUT_LINE('  Statement: {{ grant }}');
+            DBMS_OUTPUT.PUT_LINE('  Statement: ' || v_grant_stmt);
+            DBMS_OUTPUT.PUT_LINE('  Grantee: {{ grant.grantee }}, Privilege: {{ grant.privilege }}');
     END;
     {% endfor %}
     {% else %}
-    DBMS_OUTPUT.PUT_LINE('No grant statements found to process');
+    DBMS_OUTPUT.PUT_LINE('No grants found in captured configuration - nothing to restore');
     {% endif %}
     
     -- Summary
@@ -61,10 +69,11 @@ BEGIN
         DBMS_OUTPUT.PUT_LINE('');
         DBMS_OUTPUT.PUT_LINE('⚠ WARNING: ' || v_failed_count || ' grant(s) failed!');
         DBMS_OUTPUT.PUT_LINE('  Manual intervention may be required to restore privileges');
+        DBMS_OUTPUT.PUT_LINE('  Run dynamic_grants.sql for manual grant restoration');
         DBMS_OUTPUT.PUT_LINE('  Check the error messages above for details');
     ELSE
         DBMS_OUTPUT.PUT_LINE('');
-        DBMS_OUTPUT.PUT_LINE('✓ All grants restored successfully');
+        DBMS_OUTPUT.PUT_LINE('✓ All grants restored successfully from captured configuration');
     END IF;
     
 EXCEPTION

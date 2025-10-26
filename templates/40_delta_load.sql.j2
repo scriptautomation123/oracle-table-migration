@@ -39,20 +39,39 @@ BEGIN
 END;
 /
 
--- Count delta rows using safe parameterized query
-PROMPT Counting delta rows...
+-- Configurable delta load based on partition key and interval
+PROMPT Calculating delta cutoff based on interval: {{ common_settings.migration_settings.delta_load_interval | default('last_day') }}
 DECLARE
     v_partition_column VARCHAR2(128) := '{{ target_configuration.partition_column }}';
-    v_cutoff_timestamp DATE := TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS');
+    v_delta_interval VARCHAR2(20) := '{{ common_settings.migration_settings.delta_load_interval | default('last_day') }}';
+    v_cutoff_timestamp DATE;
     v_table_name VARCHAR2(128) := '{{ owner }}.{{ table_name }}';
     v_sql VARCHAR2(4000);
 BEGIN
+    -- Calculate cutoff timestamp based on configured interval
+    CASE v_delta_interval
+        WHEN 'last_hour' THEN
+            v_cutoff_timestamp := SYSDATE - INTERVAL '1' HOUR;
+        WHEN 'last_day' THEN  
+            v_cutoff_timestamp := SYSDATE - INTERVAL '1' DAY;
+        WHEN 'last_week' THEN
+            v_cutoff_timestamp := SYSDATE - INTERVAL '7' DAY;
+        ELSE
+            -- Default to last day if interval not recognized
+            v_cutoff_timestamp := SYSDATE - INTERVAL '1' DAY;
+    END CASE;
+    
+    DBMS_OUTPUT.PUT_LINE('Delta load configuration:');
+    DBMS_OUTPUT.PUT_LINE('  Interval: ' || v_delta_interval);  
+    DBMS_OUTPUT.PUT_LINE('  Cutoff timestamp: ' || TO_CHAR(v_cutoff_timestamp, 'YYYY-MM-DD HH24:MI:SS'));
+    DBMS_OUTPUT.PUT_LINE('  Partition column: ' || v_partition_column);
+    DBMS_OUTPUT.PUT_LINE('');
+    
     -- Build safe SQL with proper escaping
     v_sql := 'SELECT COUNT(*) FROM ' || v_table_name || ' WHERE ' || v_partition_column || ' > :1';
     
+    DBMS_OUTPUT.PUT_LINE('Counting delta rows...');
     DBMS_OUTPUT.PUT_LINE('Executing: ' || v_sql);
-    DBMS_OUTPUT.PUT_LINE('Partition column: ' || v_partition_column);
-    DBMS_OUTPUT.PUT_LINE('Cutoff timestamp: ' || TO_CHAR(v_cutoff_timestamp, 'YYYY-MM-DD HH24:MI:SS'));
     
     EXECUTE IMMEDIATE v_sql INTO :v_delta_count USING v_cutoff_timestamp;
     
@@ -60,9 +79,13 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('');
     
     IF :v_delta_count = 0 THEN
-        DBMS_OUTPUT.PUT_LINE('No delta changes found - skipping delta load');
+        DBMS_OUTPUT.PUT_LINE('No delta changes found for interval ' || v_delta_interval || ' - skipping delta load');
         RETURN;
     END IF;
+    
+    -- Store cutoff for use in subsequent operations
+    SELECT TO_CHAR(v_cutoff_timestamp, 'YYYY-MM-DD HH24:MI:SS') INTO :v_start_time FROM dual;
+    
 EXCEPTION
     WHEN OTHERS THEN
         DBMS_OUTPUT.PUT_LINE('ERROR counting delta rows: ' || SQLERRM);
@@ -79,7 +102,13 @@ MERGE {{ target_configuration.parallel_degree | parallel_hint }} INTO {{ owner }
 USING (
     SELECT {{ column_list }}
     FROM {{ owner }}.{{ table_name }}
-    WHERE {{ target_configuration.partition_column }} > TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS')
+    WHERE {{ target_configuration.partition_column }} > 
+    (CASE '{{ common_settings.migration_settings.delta_load_interval | default('last_day') }}'
+        WHEN 'last_hour' THEN SYSDATE - INTERVAL '1' HOUR
+        WHEN 'last_day' THEN SYSDATE - INTERVAL '1' DAY  
+        WHEN 'last_week' THEN SYSDATE - INTERVAL '7' DAY
+        ELSE SYSDATE - INTERVAL '1' DAY
+    END)
 ) src
 ON ({{ primary_key_columns | match_condition('tgt', 'src') }})
 WHEN MATCHED THEN
@@ -106,7 +135,13 @@ INSERT {{ target_configuration.parallel_degree | parallel_hint }} INTO {{ owner 
 SELECT {{ target_configuration.parallel_degree | parallel_hint }}
     {{ column_list }}
 FROM {{ owner }}.{{ table_name }}
-WHERE {{ target_configuration.partition_column }} > TO_DATE('{{ cutoff_timestamp }}', 'YYYY-MM-DD HH24:MI:SS');
+WHERE {{ target_configuration.partition_column }} > 
+(CASE '{{ common_settings.migration_settings.delta_load_interval | default('last_day') }}'
+    WHEN 'last_hour' THEN SYSDATE - INTERVAL '1' HOUR
+    WHEN 'last_day' THEN SYSDATE - INTERVAL '1' DAY
+    WHEN 'last_week' THEN SYSDATE - INTERVAL '7' DAY  
+    ELSE SYSDATE - INTERVAL '1' DAY
+END);
 
 -- Get insert statistics
 BEGIN

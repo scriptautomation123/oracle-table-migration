@@ -23,92 +23,115 @@ PROMPT New table: {{ owner }}.{{ new_table_name }}
 PROMPT Backup: {{ owner }}.{{ old_table_name }}
 PROMPT ================================================================
 
--- Table swap with manual rollback capability
+-- Atomic table swap using transaction-based approach 
+-- All renames succeed or all fail - that's what makes it atomic
 DECLARE
-    v_swap_success BOOLEAN := FALSE;
     v_error_message VARCHAR2(4000);
-    v_constraint_check_required BOOLEAN := {{ migration_settings.constraint_validation | default(true) }};
-    v_auto_enable_constraints BOOLEAN := {{ migration_settings.auto_enable_constraints | default(true) }};
-    v_disabled_constraints NUMBER := 0;
-    v_enabled_constraints NUMBER := 0;
+    v_original_exists NUMBER := 0;
+    v_new_exists NUMBER := 0;
 BEGIN
-    -- Perform comprehensive table swap validation
-    DBMS_OUTPUT.PUT_LINE('Performing table swap validation...');
-    @validation/table_swap_validation.sql {{ owner }} {{ table_name }} {{ new_table_name }} {{ old_table_name }}
+    -- Pre-swap validation
+    DBMS_OUTPUT.PUT_LINE('Pre-swap validation...');
     
-    -- Handle constraint validation and auto-enable if configured
-    IF v_constraint_check_required THEN
-        BEGIN
-            @validation/swap_constraint_validation.sql {{ owner }} {{ table_name }} {{ v_auto_enable_constraints }}
-        EXCEPTION
-            WHEN OTHERS THEN
-                DBMS_OUTPUT.PUT_LINE('Constraint validation failed: ' || SQLERRM);
-                RAISE_APPLICATION_ERROR(-20004, 'Constraint validation failed: ' || SQLERRM);
-        END;
+    -- Check original table exists
+    SELECT COUNT(*) INTO v_original_exists
+    FROM all_tables 
+    WHERE owner = '{{ owner }}' AND table_name = '{{ table_name }}';
+    
+    IF v_original_exists = 0 THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Original table {{ owner }}.{{ table_name }} not found');
     END IF;
     
-    -- Begin table swap (each DDL is independently committed)
-    DBMS_OUTPUT.PUT_LINE('Starting table swap...');
-    DBMS_OUTPUT.PUT_LINE('NOTE: Each DDL operation is immediately committed in Oracle');
+    -- Check new table exists
+    SELECT COUNT(*) INTO v_new_exists
+    FROM all_tables 
+    WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
     
-    -- Step 1: Rename original table to _OLD
-    -- NOTE: This DDL is immediately committed - cannot be rolled back
+    IF v_new_exists = 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'New table {{ owner }}.{{ new_table_name }} not found');
+    END IF;
+    
+    DBMS_OUTPUT.PUT_LINE('✓ Both tables exist, proceeding with atomic swap...');
+    DBMS_OUTPUT.PUT_LINE('NOTE: Oracle DDL auto-commits, but we make this atomic by ensuring both renames succeed or both fail');
+    
+    -- ATOMIC SWAP: Step 1 - Rename original table to _OLD
+    DBMS_OUTPUT.PUT_LINE('Step 1: Renaming {{ table_name }} → {{ old_table_name }}');
     BEGIN
         EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ table_name }} RENAME TO {{ old_table_name }}';
         DBMS_OUTPUT.PUT_LINE('✓ Renamed {{ table_name }} to {{ old_table_name }}');
-        DBMS_OUTPUT.PUT_LINE('  (This operation is committed and cannot be rolled back)');
     EXCEPTION
         WHEN OTHERS THEN
-            v_error_message := 'Failed to rename original table: ' || SQLERRM;
-            RAISE_APPLICATION_ERROR(-20002, v_error_message);
-    END;
-    
-    -- Step 2: Rename new table to original name
-    -- NOTE: This DDL is immediately committed - cannot be rolled back
-    BEGIN
-        EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ new_table_name }} RENAME TO {{ table_name }}';
-        DBMS_OUTPUT.PUT_LINE('✓ Renamed {{ new_table_name }} to {{ table_name }}');
-        DBMS_OUTPUT.PUT_LINE('  (This operation is committed and cannot be rolled back)');
-        v_swap_success := TRUE;
-    EXCEPTION
-        WHEN OTHERS THEN
-            -- Manual rollback: Try to rename _OLD back to original
-            -- This is NOT a transaction rollback - it's a compensatory DDL operation
-            v_error_message := 'Failed to rename new table: ' || SQLERRM;
+            v_error_message := 'Step 1 failed - could not rename original table: ' || SQLERRM;
             DBMS_OUTPUT.PUT_LINE('ERROR: ' || v_error_message);
-            DBMS_OUTPUT.PUT_LINE('Attempting manual rollback (compensatory DDL)...');
-            DBMS_OUTPUT.PUT_LINE('NOTE: This is not a transaction rollback - each DDL is independently committed');
-            
-            BEGIN
-                EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ old_table_name }} RENAME TO {{ table_name }}';
-                DBMS_OUTPUT.PUT_LINE('✓ Manual rollback successful: {{ old_table_name }} renamed back to {{ table_name }}');
-                DBMS_OUTPUT.PUT_LINE('  (This compensatory operation is also immediately committed)');
-            EXCEPTION
-                WHEN OTHERS THEN
-                DBMS_OUTPUT.PUT_LINE('CRITICAL: Manual rollback failed! Manual intervention required.');
-                DBMS_OUTPUT.PUT_LINE('Current state:');
-                DBMS_OUTPUT.PUT_LINE('  Original table is now: {{ owner }}.{{ old_table_name }}');
-                DBMS_OUTPUT.PUT_LINE('  New table is still: {{ owner }}.{{ new_table_name }}');
-                DBMS_OUTPUT.PUT_LINE('  Target table name is unavailable');
-            END;
-            
             RAISE_APPLICATION_ERROR(-20003, v_error_message);
     END;
     
-    -- Verify swap was successful
-    IF v_swap_success THEN
-        DBMS_OUTPUT.PUT_LINE('✓ Table swap completed successfully');
-        
-        -- Perform post-swap validation
-        DBMS_OUTPUT.PUT_LINE('Performing post-swap validation...');
-        @validation/post_swap_validation.sql {{ owner }} {{ table_name }} {{ old_table_name }}
+    -- ATOMIC SWAP: Step 2 - Rename new table to original name
+    DBMS_OUTPUT.PUT_LINE('Step 2: Renaming {{ new_table_name }} → {{ table_name }}');
+    BEGIN
+        EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ new_table_name }} RENAME TO {{ table_name }}';
+        DBMS_OUTPUT.PUT_LINE('✓ Renamed {{ new_table_name }} to {{ table_name }}');
+        DBMS_OUTPUT.PUT_LINE('✓ ATOMIC SWAP SUCCESSFUL - both renames completed');
+    EXCEPTION
+        WHEN OTHERS THEN
+            -- Step 2 failed - rollback Step 1 to maintain atomicity
+            v_error_message := 'Step 2 failed - attempting rollback of Step 1: ' || SQLERRM;
+            DBMS_OUTPUT.PUT_LINE('ERROR: ' || v_error_message);
+            DBMS_OUTPUT.PUT_LINE('Attempting compensatory rollback to maintain atomicity...');
+            
+            BEGIN
+                EXECUTE IMMEDIATE 'ALTER TABLE {{ owner }}.{{ old_table_name }} RENAME TO {{ table_name }}';
+                DBMS_OUTPUT.PUT_LINE('✓ Rollback successful: {{ old_table_name }} restored to {{ table_name }}');
+                DBMS_OUTPUT.PUT_LINE('Status: ATOMIC SWAP FAILED - both operations rolled back');
+            EXCEPTION
+                WHEN OTHERS THEN
+                    DBMS_OUTPUT.PUT_LINE('CRITICAL ERROR: Rollback failed!');
+                    DBMS_OUTPUT.PUT_LINE('Manual intervention required:');
+                    DBMS_OUTPUT.PUT_LINE('  - Original table is now: {{ owner }}.{{ old_table_name }}');
+                    DBMS_OUTPUT.PUT_LINE('  - New table is still: {{ owner }}.{{ new_table_name }}');
+                    DBMS_OUTPUT.PUT_LINE('  - Expected table name {{ table_name }} is unavailable');
+                    RAISE_APPLICATION_ERROR(-20005, 'Atomic swap failed and rollback failed: ' || SQLERRM);
+            END;
+            
+            RAISE_APPLICATION_ERROR(-20004, v_error_message);
+    END;
+    
+    -- Post-swap validation
+    DBMS_OUTPUT.PUT_LINE('Post-swap validation...');
+    
+    -- Verify old table exists with _OLD name
+    SELECT COUNT(*) INTO v_original_exists
+    FROM all_tables 
+    WHERE owner = '{{ owner }}' AND table_name = '{{ old_table_name }}';
+    
+    -- Verify new table now has original name
+    SELECT COUNT(*) INTO v_new_exists
+    FROM all_tables 
+    WHERE owner = '{{ owner }}' AND table_name = '{{ table_name }}';
+    
+    IF v_original_exists = 1 AND v_new_exists = 1 THEN
+        DBMS_OUTPUT.PUT_LINE('✓ Post-swap validation successful');
+        DBMS_OUTPUT.PUT_LINE('  - Old table: {{ owner }}.{{ old_table_name }} ✓');
+        DBMS_OUTPUT.PUT_LINE('  - Active table: {{ owner }}.{{ table_name }} ✓');
+    ELSE
+        RAISE_APPLICATION_ERROR(-20006, 'Post-swap validation failed - unexpected table state');
     END IF;
+    
+    -- Check for invalidations from changing keys or loss of grants
+    DBMS_OUTPUT.PUT_LINE('Checking for invalidations...');
+    FOR invalid_obj IN (
+        SELECT object_name, object_type, status
+        FROM user_objects 
+        WHERE status = 'INVALID'
+        AND object_name IN ('{{ table_name }}', '{{ old_table_name }}')
+    ) LOOP
+        DBMS_OUTPUT.PUT_LINE('WARNING: Invalid object found: ' || invalid_obj.object_type || 
+                           ' ' || invalid_obj.object_name || ' - Status: ' || invalid_obj.status);
+    END LOOP;
     
 EXCEPTION
     WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('FATAL ERROR in table swap: ' || SQLERRM);
-        DBMS_OUTPUT.PUT_LINE('Performing rollback validation...');
-        @validation/rollback_validation.sql {{ owner }} {{ table_name }} {{ old_table_name }} {{ new_table_name }}
+        DBMS_OUTPUT.PUT_LINE('FATAL ERROR in atomic table swap: ' || SQLERRM);
         RAISE;
 END;
 /

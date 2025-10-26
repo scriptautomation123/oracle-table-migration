@@ -1,21 +1,16 @@
 #!/usr/bin/env python3
 """
-Config Validator Module
-=======================
-Validates migration configuration JSON against schema and database reality.
-
-Performs:
-- JSON schema validation
-- Column existence checks
-- Oracle syntax validation
-- Best practice recommendations
-- Warning generation
+Configuration Validator Module
+==============================
+Validates migration configuration files against schema and best practices.
 """
 
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Any, Tuple
+from jsonschema import validate, ValidationError, Draft7Validator
+from .migration_models import MigrationConfig, TableConfig
 
 try:
     from jsonschema import ValidationError, validate
@@ -28,7 +23,7 @@ except ImportError:
 class ConfigValidator:
     """Validates migration configuration files"""
 
-    def __init__(self, connection=None, schema_file="migration_schema.json"):
+    def __init__(self, connection=None, schema_file="enhanced_migration_schema.json"):
         """
         Initialize validator
 
@@ -150,15 +145,29 @@ class ConfigValidator:
         for idx, table in enumerate(tables):
             self._validate_table_logic(table, idx)
 
-    def _validate_table_logic(self, table: Dict, index: int):
-        """Validate logic for a single table"""
-        table_name = table.get("table_name", f"table[{index}]")
+    def _validate_table_logic(self, table_dict: Dict, index: int):
+        """Validate logic for a single table using typed models"""
+        try:
+            # Convert to typed model for better validation
+            table = TableConfig(
+                enabled=table_dict.get("enabled", False),
+                owner=table_dict.get("owner", ""),
+                table_name=table_dict.get("table_name", f"table[{index}]"),
+                current_state=None,  # We'll access the dict directly for now
+                common_settings=None  # We'll access the dict directly for now
+            )
+        except Exception as e:
+            self.errors.append(f"Table[{index}]: Failed to parse table structure: {e}")
+            return
+
+        table_name = table.table_name
         prefix = f"Table {table_name}"
 
-        current_state = table.get("current_state", {})
-        target_config = table.get("target_configuration", {})
-        available_cols = table.get("available_columns", {})
-        migration_action = table.get("migration_action")
+        current_state = table_dict.get("current_state", {})
+        common_settings = table_dict.get("common_settings", {})
+        target_config = common_settings.get("target_configuration", {})
+        available_cols = current_state.get("available_columns", {})
+        migration_action = common_settings.get("migration_action")
 
         # Check partition column selection
         partition_col = target_config.get("partition_column")

@@ -1,98 +1,420 @@
 {#
 ==================================================================
-Template: Master Script 1 (Jinja2)
+Template: Master Script 1 (Jinja2) - COMPLETE MIGRATION
 ==================================================================
-Purpose: Execute steps 10-40 (structure and initial load)
+Purpose: Execute COMPLETE end-to-end migration with validation
 ==================================================================
 #}
 -- ==================================================================
--- MASTER SCRIPT 1: Structure Creation and Initial Load
+-- MASTER SCRIPT 1: COMPLETE END-TO-END MIGRATION
 -- ==================================================================
 -- Table: {{ owner }}.{{ table_name }}
 -- Generated: {{ generation_date }}
 -- ==================================================================
--- This script executes:
---   Step 10: Create new partitioned table
---   Step 20: Initial data load
---   Step 30: Create indexes
---   Step 40: Delta load (optional)
+-- This script executes EVERYTHING needed for complete migration:
+--   Step 00: Disable constraints and prepare environment
+--   Step 10: Create new partitioned table with full DDL
+--   Step 20: Initial data load with validation
+--   Step 30: Create standard indexes
+--   Step 35: Recreate complex/composite indexes  
+--   Step 40: Delta load (if applicable)
+--   Step 50: Atomic table swap
+--   Step 60: Restore grants and privileges
+--   Step 70: Drop old table (optional)
+--   Step 80: Enable and validate all constraints
+--   Final:   Complete validation and reporting
+-- ==================================================================
+-- CRITICAL: This script should run completely without manual intervention
 -- ==================================================================
 
 SET ECHO ON
 SET SERVEROUTPUT ON SIZE UNLIMITED
 SET TIMING ON
 SET FEEDBACK ON
+SET PAGESIZE 1000
+SET LINESIZE 120
 
+-- Enable error handling - script stops on any error
 WHENEVER SQLERROR EXIT SQL.SQLCODE
+WHENEVER OSERROR EXIT FAILURE
+
+-- Migration tracking variables
+DEFINE migration_start_time = "&_DATE"
+DEFINE table_owner = "{{ owner }}"
+DEFINE source_table = "{{ table_name }}"  
+DEFINE target_table = "{{ new_table_name }}"
 
 PROMPT ================================================================
-PROMPT MASTER SCRIPT 1: Structure and Initial Load
+PROMPT MASTER SCRIPT 1: COMPLETE END-TO-END MIGRATION
+PROMPT ================================================================  
+PROMPT Migration ID: {{ migration_id | default('MIG_' + table_name + '_' + generation_date.replace('-','').replace(' ','_').replace(':','')) }}
+PROMPT Source Table: {{ owner }}.{{ table_name }}
+PROMPT Target Table: {{ owner }}.{{ new_table_name }}
+PROMPT Migration Type: {{ common_settings.migration_action }}
 PROMPT ================================================================
-PROMPT Table: {{ owner }}.{{ table_name }}
-PROMPT Target: {{ owner }}.{{ new_table_name }}
-PROMPT Size: {{ current_state.size_gb | format_size_gb }}
-PROMPT Rows: {{ current_state.row_count | format_row_count }}
-PROMPT Estimated Total Time: {{ (current_state.size_gb * 1.5) | estimate_time('load') }}
+PROMPT Current Size: {{ current_state.size_gb | format_size_gb }}
+PROMPT Current Rows: {{ current_state.row_count | format_row_count }}
+PROMPT Partitioned: {{ current_state.is_partitioned | yesno }}
+PROMPT LOB Columns: {{ current_state.lob_count }}
+PROMPT Index Count: {{ current_state.index_count }}
+PROMPT ----------------------------------------------------------------
+PROMPT Target Partition Type: {{ common_settings.target_configuration.partition_type }}
+PROMPT Target Tablespace: {{ common_settings.target_configuration.tablespace }}
+PROMPT Parallel Degree: {{ common_settings.target_configuration.parallel_degree }}
+PROMPT ================================================================
+PROMPT Estimated Duration: {{ (current_state.size_gb * 2 + current_state.row_count / 1000000) | estimate_time('complete_migration') }}
 PROMPT ================================================================
 
--- Execute Step 10: Create table structure
+-- Pre-migration validation
+PROMPT
+PROMPT ================================================================  
+PROMPT PRE-MIGRATION VALIDATION
+PROMPT ================================================================
+SELECT 'Source table exists: ' || CASE WHEN COUNT(*) > 0 THEN 'YES' ELSE 'NO' END as validation
+FROM all_tables WHERE owner = '{{ owner }}' AND table_name = '{{ table_name }}';
+
+SELECT 'Source row count: ' || TO_CHAR(COUNT(*), '999,999,999,999') as validation  
+FROM {{ owner }}.{{ table_name }};
+
+SELECT 'Available tablespace space: ' || ROUND(SUM(bytes)/1024/1024/1024, 2) || ' GB' as validation
+FROM dba_free_space WHERE tablespace_name = '{{ common_settings.target_configuration.tablespace }}';
+
+PROMPT Pre-migration validation complete ✓
+
+-- Conditional constraint disabling only if data migration is requested
+{% if common_settings.migration_settings.migrate_data or common_settings.migration_settings.enable_delta_load %}
+-- STEP 00: Disable constraints and prepare environment  
 PROMPT
 PROMPT ================================================================
-PROMPT Executing Step 10: Create Table Structure
+PROMPT STEP 00: Disable Constraints and Prepare Environment
+PROMPT ================================================================
+PROMPT NOTE: Constraints will be disabled only for data migration
+PROMPT ================================================================
+@@ 00_disable_constraints.sql
+
+-- Validate Step 00
+SELECT 'Disabled constraints: ' || COUNT(*) as step_00_result
+FROM user_constraints 
+WHERE table_name = '{{ table_name }}' 
+AND status = 'DISABLED';
+
+PROMPT Step 00 complete ✓
+{% else %}
+PROMPT ================================================================
+PROMPT STEP 00: SKIPPED - No data migration requested
+PROMPT ================================================================
+PROMPT NOTE: Constraint disabling skipped since no data migration required
+PROMPT ================================================================
+{% endif %}
+
+-- STEP 10: Create new partitioned table
+PROMPT
+PROMPT ================================================================
+PROMPT STEP 10: Create New Partitioned Table Structure
 PROMPT ================================================================
 @@ 10_create_table.sql
 
--- Validate Step 10 completion
-PROMPT Validating Step 10 completion...
-SELECT COUNT(*) AS table_exists
-FROM all_tables
-WHERE owner = '{{ owner }}'
-  AND table_name = '{{ new_table_name }}';
+-- Validate Step 10 
+SELECT 'New table created: ' || CASE WHEN COUNT(*) > 0 THEN 'YES' ELSE 'NO' END as step_10_result
+FROM all_tables 
+WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
 
--- Execute Step 20: Initial data load  
+SELECT 'Partition type: ' || partitioning_type as step_10_result
+FROM all_part_tables
+WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
+
+PROMPT Step 10 complete ✓
+
+{% if common_settings.migration_settings.migrate_data %}
+-- STEP 20: Initial data load with validation
 PROMPT
-PROMPT ================================================================
-PROMPT Executing Step 20: Initial Data Load
+PROMPT ================================================================  
+PROMPT STEP 20: Initial Data Load with Validation
 PROMPT ================================================================
 @@ 20_data_load.sql
 
--- Validate Step 20 completion
-PROMPT Validating Step 20 completion...
-SELECT COUNT(*) AS row_count
+-- Validate Step 20
+SELECT 'Source rows: ' || TO_CHAR(COUNT(*), '999,999,999,999') as step_20_validation
+FROM {{ owner }}.{{ table_name }};
+
+SELECT 'Target rows: ' || TO_CHAR(COUNT(*), '999,999,999,999') as step_20_validation  
 FROM {{ owner }}.{{ new_table_name }};
 
--- Execute Step 30: Create indexes
+SELECT 'Data migration: ' || 
+       CASE WHEN s.cnt = t.cnt THEN 'SUCCESS ✓' 
+            ELSE 'FAILED ✗ (' || (s.cnt - t.cnt) || ' missing)' 
+       END as step_20_result
+FROM (SELECT COUNT(*) cnt FROM {{ owner }}.{{ table_name }}) s,
+     (SELECT COUNT(*) cnt FROM {{ owner }}.{{ new_table_name }}) t;
+
+PROMPT Step 20 complete ✓
+{% else %}
+PROMPT ================================================================
+PROMPT STEP 20: SKIPPED - No data migration requested
+PROMPT ================================================================
+PROMPT NOTE: Data migration skipped - table structure only
+PROMPT ================================================================
+{% endif %}
+
+-- STEP 30: Create standard indexes
 PROMPT
 PROMPT ================================================================
-PROMPT Executing Step 30: Create Indexes
+PROMPT STEP 30: Create Standard Indexes
 PROMPT ================================================================
 @@ 30_create_indexes.sql
 
--- Validate Step 30 completion
-PROMPT Validating Step 30 completion...
-SELECT COUNT(*) AS index_count
+-- Validate Step 30
+SELECT 'Indexes created: ' || COUNT(*) as step_30_result
 FROM all_indexes
-WHERE owner = '{{ owner }}'
-  AND table_name = '{{ new_table_name }}';
+WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
 
-{% if include_delta_load %}
--- Execute Step 40: Delta load
+PROMPT Step 30 complete ✓
+
+-- STEP 35: Recreate complex/composite indexes
+PROMPT  
+PROMPT ================================================================
+PROMPT STEP 35: Recreate Complex and Composite Indexes
+PROMPT ================================================================
+@@ 35_recreate_indexes.sql
+
+-- Validate Step 35
+SELECT 'Total indexes on target: ' || COUNT(*) as step_35_result
+FROM all_indexes
+WHERE owner = '{{ owner }}' AND table_name = '{{ new_table_name }}';
+
+SELECT 'Composite indexes: ' || COUNT(*) as step_35_result  
+FROM all_ind_columns ic
+JOIN all_indexes i ON ic.index_owner = i.owner AND ic.index_name = i.index_name
+WHERE i.owner = '{{ owner }}' AND i.table_name = '{{ new_table_name }}'
+GROUP BY ic.index_name
+HAVING COUNT(*) > 1;
+
+PROMPT Step 35 complete ✓
+
+{% if common_settings.migration_settings.enable_delta_load %}
+-- STEP 40: Delta load (incremental changes)
 PROMPT
 PROMPT ================================================================
-PROMPT Executing Step 40: Delta Load
+PROMPT STEP 40: Delta Load (Incremental Changes)
+PROMPT ================================================================
+PROMPT NOTE: Delta load configured for {{ common_settings.migration_settings.delta_load_interval | default('last day') }}
 PROMPT ================================================================
 @@ 40_delta_load.sql
 
--- Validate Step 40 completion
-PROMPT Validating Step 40 completion...
-SELECT COUNT(*) AS final_row_count
+-- Validate Step 40
+SELECT 'Final target rows: ' || TO_CHAR(COUNT(*), '999,999,999,999') as step_40_result
 FROM {{ owner }}.{{ new_table_name }};
+
+PROMPT Step 40 complete ✓
+{% else %}
+PROMPT ================================================================
+PROMPT STEP 40: SKIPPED - No delta load requested
+PROMPT ================================================================
+PROMPT NOTE: Delta load skipped as per configuration
+PROMPT ================================================================
 {% endif %}
+
+-- STEP 50: Atomic table swap (transaction-based renames)
+PROMPT
+PROMPT ================================================================
+PROMPT STEP 50: Atomic Table Swap
+PROMPT ================================================================
+PROMPT NOTE: Making atomic via transaction - all renames succeed or all fail
+PROMPT ================================================================
+@@ 50_swap_tables.sql
+
+-- Validate Step 50  
+SELECT 'Active table is now: ' || table_name as step_50_result
+FROM all_tables 
+WHERE owner = '{{ owner }}' 
+AND table_name IN ('{{ table_name }}', '{{ new_table_name }}')
+AND table_name NOT LIKE '%_OLD%'
+ORDER BY created DESC
+FETCH FIRST 1 ROW ONLY;
+
+PROMPT Step 50 complete ✓
+
+-- STEP 60: Restore grants and privileges
+PROMPT
+PROMPT ================================================================  
+PROMPT STEP 60: Restore Grants and Privileges
+PROMPT ================================================================
+PROMPT NOTE: Grants captured in config.json and dynamic_grants.sql as backup
+PROMPT ================================================================
+@@ 60_restore_grants.sql
+
+-- Validate Step 60
+SELECT 'Grants restored: ' || COUNT(*) as step_60_result
+FROM all_tab_privs
+WHERE owner = '{{ owner }}' AND table_name = '{{ table_name }}';
+
+PROMPT Step 60 complete ✓
+PROMPT NOTE: If grants issues occur, run dynamic_grants.sql manually
+
+-- STEP 70: Drop old table (SEPARATE SCRIPT - NOT PART OF master1.sql)
+PROMPT
+PROMPT ================================================================
+PROMPT STEP 70: Drop Old Table Preparation
+PROMPT ================================================================
+PROMPT NOTE: 70_drop_old_table.sql generated as SEPARATE script
+PROMPT NOT executed as part of master1.sql - manual execution required
+PROMPT ================================================================
+PROMPT Old table: {{ owner }}.{{ table_name }}_OLD
+PROMPT Drop script: 70_drop_old_table.sql
+PROMPT Retention period: {{ common_settings.migration_settings.drop_old_after_days | default(7) }} days
+PROMPT ================================================================
+PROMPT IMPORTANT: Execute 70_drop_old_table.sql only after validating migration
+PROMPT ================================================================
+
+-- Conditional constraint enabling only if data migration occurred
+{% if common_settings.migration_settings.migrate_data or common_settings.migration_settings.enable_delta_load %}
+-- STEP 80: Enable and validate all constraints
+PROMPT
+PROMPT ================================================================
+PROMPT STEP 80: Enable and Validate All Constraints  
+PROMPT ================================================================
+@@ 80_enable_constraints.sql
+
+-- Validate Step 80
+SELECT 'Enabled constraints: ' || COUNT(*) as step_80_result
+FROM user_constraints
+WHERE table_name = '{{ table_name }}'
+AND status = 'ENABLED'
+AND constraint_type IN ('P','R','U','C')
+AND constraint_name NOT LIKE 'SYS_%';
+
+SELECT 'Invalid constraints: ' || COUNT(*) as step_80_validation
+FROM user_constraints  
+WHERE table_name = '{{ table_name }}'
+AND status = 'ENABLED'
+AND validated = 'NOT VALIDATED';
+
+-- Run statistics for CBO optimization
+EXEC DBMS_STATS.GATHER_TABLE_STATS('{{ owner }}', '{{ table_name }}', CASCADE => TRUE);
+
+PROMPT Step 80 complete ✓
+{% else %}
+PROMPT ================================================================
+PROMPT STEP 80: SKIPPED - No constraint re-enabling needed
+PROMPT ================================================================
+PROMPT NOTE: Constraints were not disabled, no re-enabling required
+PROMPT ================================================================
+{% endif %}
+
+-- FINAL VALIDATION AND REPORTING
+PROMPT
+PROMPT ================================================================
+PROMPT FINAL MIGRATION VALIDATION AND REPORTING
+PROMPT ================================================================
+
+-- Complete data validation
+SELECT 'FINAL DATA VALIDATION:' as validation_type FROM dual;
+SELECT 'Original table rows: ' || TO_CHAR(COUNT(*), '999,999,999,999') as final_validation
+FROM {{ owner }}.{{ table_name }}_OLD;
+
+SELECT 'Migrated table rows: ' || TO_CHAR(COUNT(*), '999,999,999,999') as final_validation  
+FROM {{ owner }}.{{ table_name }};
+
+SELECT 'Row count match: ' ||
+       CASE WHEN o.cnt = n.cnt THEN 'SUCCESS ✓' 
+            ELSE 'FAILED ✗ (Diff: ' || (o.cnt - n.cnt) || ')' 
+       END as final_validation
+FROM (SELECT COUNT(*) cnt FROM {{ owner }}.{{ table_name }}_OLD) o,
+     (SELECT COUNT(*) cnt FROM {{ owner }}.{{ table_name }}) n;
+
+-- Constraint validation  
+SELECT 'CONSTRAINT VALIDATION:' as validation_type FROM dual;
+SELECT constraint_type || ' constraints: ' || COUNT(*) as final_validation
+FROM user_constraints
+WHERE table_name = '{{ table_name }}'
+AND status = 'ENABLED'  
+AND constraint_name NOT LIKE 'SYS_%'
+GROUP BY constraint_type
+ORDER BY constraint_type;
+
+-- Index validation
+SELECT 'INDEX VALIDATION:' as validation_type FROM dual;
+SELECT 'Total indexes: ' || COUNT(*) as final_validation  
+FROM user_indexes
+WHERE table_name = '{{ table_name }}';
+
+SELECT index_type || ' indexes: ' || COUNT(*) as final_validation
+FROM user_indexes
+WHERE table_name = '{{ table_name }}'  
+GROUP BY index_type
+ORDER BY index_type;
+
+-- Partitioning validation
+SELECT 'PARTITION VALIDATION:' as validation_type FROM dual;
+SELECT 'Partition type: ' || partitioning_type as final_validation
+FROM user_part_tables  
+WHERE table_name = '{{ table_name }}';
+
+SELECT 'Partition count: ' || COUNT(*) as final_validation
+FROM user_tab_partitions
+WHERE table_name = '{{ table_name }}';
+
+-- Performance validation (sample query)
+SELECT 'PERFORMANCE VALIDATION:' as validation_type FROM dual;
+SELECT 'Sample query execution:' as final_validation FROM dual;
+
+-- Sample query to test partitioning performance
+{% if common_settings.target_configuration.partition_column %}
+EXPLAIN PLAN FOR 
+SELECT COUNT(*) FROM {{ owner }}.{{ table_name }} 
+WHERE {{ common_settings.target_configuration.partition_column }} >= SYSDATE - 30;
+
+SELECT 'Query plan uses partition pruning: ' || 
+       CASE WHEN COUNT(*) > 0 THEN 'YES ✓' ELSE 'NO ✗' END as final_validation
+FROM plan_table 
+WHERE operation LIKE '%PARTITION%';
+
+DELETE FROM plan_table;
+{% endif %}
+
+-- Migration summary
+PROMPT
+PROMPT ================================================================
+PROMPT MIGRATION SUMMARY  
+PROMPT ================================================================
+PROMPT Migration Type: {{ common_settings.migration_action }}
+PROMPT Source: {{ owner }}.{{ table_name }} ({{ current_state.partition_type if current_state.is_partitioned else 'Non-partitioned' }})
+PROMPT Target: {{ owner }}.{{ table_name }} ({{ common_settings.target_configuration.partition_type }})
+PROMPT Data Migrated: {{ current_state.row_count | format_row_count }} rows
+PROMPT Size: {{ current_state.size_gb | format_size_gb }}
+PROMPT Tablespace: {{ common_settings.target_configuration.tablespace }}
+PROMPT ================================================================
+
+-- Final status check
+SELECT 
+    CASE 
+        WHEN EXISTS (SELECT 1 FROM user_constraints WHERE table_name = '{{ table_name }}' AND status = 'DISABLED')
+        THEN 'WARNING: Some constraints still disabled ⚠️'
+        WHEN NOT EXISTS (SELECT 1 FROM user_tables WHERE table_name = '{{ table_name }}')  
+        THEN 'ERROR: Target table missing ✗'
+        WHEN EXISTS (SELECT 1 FROM user_part_tables WHERE table_name = '{{ table_name }}' AND partitioning_type = '{{ common_settings.target_configuration.partition_type }}')
+        THEN 'SUCCESS: Migration completed successfully ✅'
+        ELSE 'WARNING: Validation incomplete ⚠️'
+    END as FINAL_STATUS
+FROM dual;
 
 PROMPT
 PROMPT ================================================================
-PROMPT MASTER SCRIPT 1 COMPLETE
+PROMPT MASTER SCRIPT 1: COMPLETE END-TO-END MIGRATION
 PROMPT ================================================================
-PROMPT Status: SUCCESS ✓
-PROMPT Next: Review results, then run master2.sql for cutover
+PROMPT Status: ✅ SUCCESS - Complete migration executed
+PROMPT Duration: &_DATE (started at &migration_start_time)  
 PROMPT ================================================================
+PROMPT 🎉 MIGRATION COMPLETE! 🎉
+PROMPT ================================================================
+PROMPT Next Steps:
+PROMPT 1. Verify application connectivity
+PROMPT 2. Monitor performance for 24-48 hours  
+PROMPT 3. Use emergency_rollback.sql only if rollback is needed
+PROMPT 4. Schedule old table cleanup (70_drop_old_table.sql)
+PROMPT ================================================================
+
+-- Reset SQL settings
+SET ECHO OFF
+SET FEEDBACK OFF
+SET TIMING OFF

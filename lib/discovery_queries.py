@@ -3,7 +3,7 @@
 Discovery Queries Module
 ========================
 SQL queries and logic to discover all tables in a schema and generate
-JSON configuration for migration.
+JSON configuration for migration using typed dataclasses.
 
 This module:
 - Identifies ALL tables (partitioned and non-partitioned)
@@ -12,27 +12,38 @@ This module:
 - Finds numeric/string columns suitable for hash subpartitioning
 - Analyzes table size, row count, LOBs, indexes
 - Generates intelligent migration recommendations
+- Uses Python dataclasses for type safety and automatic serialization
 """
 
-import json
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from .environment_config import EnvironmentConfigManager
+from .migration_models import (
+    MigrationConfig, TableConfig, CurrentState, CommonSettings,
+    TargetConfiguration, MigrationSettings, ColumnInfo, LobStorageInfo,
+    StorageParameters, IndexInfo, GrantInfo, AvailableColumns, Metadata, 
+    EnvironmentConfig, DataTablespaces, TablespaceConfig,
+    SubpartitionDefaults, SizeRecommendation, ParallelDefaults,
+    ConnectionDetails, PartitionType, IntervalType, SubpartitionType,
+    MigrationAction
+)
 
 
 class TableDiscovery:
     """Discover tables and generate migration configuration"""
 
-    def __init__(self, connection, environment: str = None):
+    def __init__(self, connection, environment: str = None, connection_string: str = None):
         """
         Initialize discovery with database connection
 
         Args:
             connection: Oracle database connection (oracledb or cx_Oracle)
             environment: Environment name for configuration
+            connection_string: Connection string for metadata tracking
         """
         self.connection = connection
+        self.connection_string = connection_string
         self.schema = None
         self.tables = []
         self.metadata = {}
@@ -44,7 +55,7 @@ class TableDiscovery:
         schema_name: str,
         include_patterns: Optional[List[str]] = None,
         exclude_patterns: Optional[List[str]] = None,
-    ) -> Dict:
+    ) -> MigrationConfig:
         """
         Discover all tables in schema and generate JSON configuration
 
@@ -54,7 +65,7 @@ class TableDiscovery:
             exclude_patterns: List of table name patterns to exclude (e.g., ['TEMP_%'])
 
         Returns:
-            Dictionary with migration configuration (ready to save as JSON)
+            MigrationConfig dataclass with complete configuration
         """
         self.schema = schema_name.upper()
 
@@ -79,6 +90,11 @@ class TableDiscovery:
         lob_counts = self._get_lob_counts()
         index_counts = self._get_index_counts()
         print("✓ Analyzed LOBs and indexes")
+        
+        # Step 5: Get constraints and referential integrity
+        constraint_info = self._get_constraint_info()
+        referential_integrity = self._get_referential_integrity()
+        print("✓ Analyzed constraints and referential integrity")
 
         # Step 5: For each table, get columns (timestamp, numeric, string)
         print("✓ Analyzing columns for each table...")
@@ -94,84 +110,37 @@ class TableDiscovery:
                 index_counts.get(table_name, 0),
             )
             tables_config.append(table_config)
-            print(f"  • {table_name}: {table_config['migration_action']}")
+            print(f"  • {table_name}: {table_config.common_settings.migration_action}")
 
-        # Step 6: Generate metadata
-        self.metadata = {
-            "generated_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "environment": self.environment,
-            "schema": self.schema,
-            "discovery_criteria": self._format_criteria(
-                include_patterns, exclude_patterns
-            ),
-            "total_tables_found": len(all_tables),
-            "tables_selected_for_migration": len(
-                [t for t in tables_config if t["enabled"]]
-            ),
-        }
+        # Step 6: Build typed metadata
+        connection_details = self._build_connection_details()
+        metadata = Metadata(
+            generated_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            environment=self.environment,
+            source_schema=self.schema,
+            source_database_service=self._extract_database_service(),
+            source_connection_details=connection_details,
+            discovery_criteria=self._format_criteria(include_patterns, exclude_patterns),
+            total_tables_found=len(all_tables),
+            tables_selected_for_migration=len([t for t in tables_config if t.enabled]),
+            schema=self.schema,  # Keep legacy field for backward compatibility
+        )
 
-        # Add environment configuration to metadata
-        try:
-            env_config = self.env_manager.load_environment_config(self.environment)
-            environment_config = {
-                "name": env_config.environment,
-                "tablespaces": {
-                    "data": {
-                        "primary": env_config.tablespaces.primary,
-                        "lob": env_config.tablespaces.lob,
-                    }
-                },
-                "subpartition_defaults": {
-                    "min_count": env_config.subpartition_defaults.min_count,
-                    "max_count": env_config.subpartition_defaults.max_count,
-                    "size_based_recommendations": env_config.subpartition_defaults.size_based_recommendations,
-                },
-                "parallel_defaults": {
-                    "min_degree": env_config.parallel_defaults.min_degree,
-                    "max_degree": env_config.parallel_defaults.max_degree,
-                    "default_degree": env_config.parallel_defaults.default_degree,
-                },
-            }
-        except Exception as e:
-            print(f"Warning: Could not load environment config: {e}")
-            # Use default environment config
-            environment_config = {
-                "name": self.environment,
-                "tablespaces": {
-                    "data": {
-                        "primary": "USERS",
-                        "lob": ["GD_LOB_01", "GD_LOB_02", "GD_LOB_03", "GD_LOB_04"],
-                    }
-                },
-                "subpartition_defaults": {
-                    "min_count": 2,
-                    "max_count": 16,
-                    "size_based_recommendations": {
-                        "small": {"max_gb": 1, "count": 2},
-                        "medium": {"max_gb": 10, "count": 4},
-                        "large": {"max_gb": 50, "count": 8},
-                        "xlarge": {"max_gb": 100, "count": 12},
-                        "xxlarge": {"max_gb": 999999, "count": 16},
-                    },
-                },
-                "parallel_defaults": {
-                    "min_degree": 1,
-                    "max_degree": 8,
-                    "default_degree": 4,
-                },
-            }
+        # Build typed environment configuration
+        environment_config = self._build_environment_config()
 
-        config = {
-            "metadata": self.metadata,
-            "environment_config": environment_config,
-            "tables": tables_config,
-        }
+        # Create the complete typed configuration
+        config = MigrationConfig(
+            metadata=metadata,
+            environment_config=environment_config,
+            tables=tables_config
+        )
 
         print(f"\n{'='*70}")
         print("Discovery complete!")
         print(f"  Total tables: {len(all_tables)}")
         print(
-            f"  Enabled for migration: {self.metadata['tables_selected_for_migration']}"
+            f"  Enabled for migration: {metadata.tables_selected_for_migration}"
         )
         print(f"{'='*70}\n")
 
@@ -451,7 +420,7 @@ class TableDiscovery:
             WHERE owner = :schema
               AND table_name = :table_name
               AND data_type IN ('VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR')
-              AND char_length <= 100
+              AND char_length <= 500
             ORDER BY
                 CASE
                     WHEN column_name LIKE '%_CODE' THEN 1
@@ -472,9 +441,58 @@ class TableDiscovery:
         cursor.close()
         return columns
 
+    def _get_identity_columns(self, table_name: str) -> List[Dict]:
+        """Get identity column information for a table"""
+        cursor = self.connection.cursor()
+
+        query = """
+            SELECT 
+                ic.column_name,
+                ic.generation_type,
+                ic.sequence_name,
+                s.min_value,
+                s.max_value,
+                s.increment_by,
+                s.cache_size,
+                s.cycle_flag,
+                s.order_flag,
+                s.last_number as start_value
+            FROM all_tab_identity_cols ic
+            LEFT JOIN all_sequences s ON (s.sequence_name = ic.sequence_name 
+                                        AND s.sequence_owner = :schema)
+            WHERE ic.owner = :schema
+              AND ic.table_name = :table_name
+            ORDER BY ic.column_name
+        """
+
+        cursor.execute(query, schema=self.schema, table_name=table_name)
+
+        identity_columns = []
+        for row in cursor.fetchall():
+            identity_columns.append({
+                "column_name": row[0],
+                "generation_type": row[1],  # 'ALWAYS', 'BY DEFAULT', 'BY DEFAULT ON NULL'
+                "sequence_name": row[2],
+                "min_value": row[3],
+                "max_value": row[4],
+                "increment_value": row[5] or 1,
+                "cache_size": row[6],
+                "cycle_flag": row[7] or 'N',
+                "order_flag": row[8] or 'N',
+                "start_value": row[9] or 1,
+            })
+
+        cursor.close()
+        return identity_columns
+
     def _get_all_columns_metadata(self, table_name: str) -> List[Dict]:
         """Get complete column metadata for CREATE TABLE statement (Oracle 19c+)"""
         cursor = self.connection.cursor()
+        
+        # Get identity column information first
+        identity_columns = self._get_identity_columns(table_name)
+        identity_map = {col['column_name']: col for col in identity_columns}
+        
         try:
             query = """
                 SELECT
@@ -527,20 +545,38 @@ class TableDiscovery:
             if is_virtual == "YES":
                 continue
 
-            columns.append(
-                {
-                    "name": col_name,
-                    "type": data_type,
-                    "length": data_length,
-                    "precision": data_precision,
-                    "scale": data_scale,
-                    "nullable": nullable,
-                    "default": (
-                        str(data_default).strip() if data_default is not None else None
-                    ),
-                    "char_length": char_length,
-                }
-            )
+            # Check if this is an identity column
+            identity_info = identity_map.get(col_name)
+            
+            column_info = {
+                "name": col_name,
+                "type": data_type,
+                "length": data_length,
+                "precision": data_precision,
+                "scale": data_scale,
+                "nullable": nullable,
+                "default": (
+                    str(data_default).strip() if data_default is not None else None
+                ),
+                "char_length": char_length,
+                "is_identity": identity_info is not None,
+            }
+            
+            # Add identity column details if present
+            if identity_info:
+                column_info.update({
+                    "identity_generation": identity_info['generation_type'],
+                    "identity_sequence": identity_info['sequence_name'],
+                    "identity_start_with": identity_info.get('start_value', 1),
+                    "identity_increment_by": identity_info.get('increment_value', 1),
+                    "identity_max_value": identity_info.get('max_value'),
+                    "identity_min_value": identity_info.get('min_value'),
+                    "identity_cache_size": identity_info.get('cache_size'),
+                    "identity_cycle_flag": identity_info.get('cycle_flag', 'N'),
+                    "identity_order_flag": identity_info.get('order_flag', 'N'),
+                })
+
+            columns.append(column_info)
 
         cursor.close()
         return columns
@@ -736,12 +772,12 @@ class TableDiscovery:
         stats: Dict,
         lob_count: int,
         index_count: int,
-    ) -> Dict:
+    ) -> TableConfig:
         """
         Analyze a single table and generate migration configuration
 
         Returns:
-            Dictionary with table configuration for JSON output
+            TableConfig dataclass with complete table configuration
         """
         # Determine current partition state
         is_partitioned = partition_info is not None
@@ -820,8 +856,6 @@ class TableDiscovery:
         recommended_parallel = self.env_manager.get_parallel_degree(
             self.environment, size_gb
         )
-        estimated_hours = self._estimate_migration_time(size_gb, index_count)
-        priority = self._determine_priority(size_gb, lob_count)
 
         # Build target configuration
         target_partition_column = None
@@ -864,62 +898,115 @@ class TableDiscovery:
             "parallel_degree": recommended_parallel,
         }
 
-        # Get complete column metadata and storage details
-        columns_metadata = self._get_all_columns_metadata(table_name)
-        lob_storage_details = self._get_lob_storage_details(table_name)
-        storage_params = self._get_table_storage_params(table_name)
-        index_details = self._get_index_details(table_name)
+        # Get complete typed column metadata and storage details
+        try:
+            columns_metadata = self._build_columns_metadata(table_name)
+        except Exception as e:
+            raise Exception(f"Error in _build_columns_metadata for {table_name}: {e}") from e
+        
+        try:
+            lob_storage_details = self._build_lob_storage_details(table_name)
+        except Exception as e:
+            raise Exception(f"Error in _build_lob_storage_details for {table_name}: {e}") from e
+        
+        try:
+            storage_params = self._build_storage_parameters(table_name)
+        except Exception as e:
+            raise Exception(f"Error in _build_storage_parameters for {table_name}: {e}") from e
+        
+        try:
+            index_details = self._build_index_details(table_name)
+        except Exception as e:
+            raise Exception(f"Error in _build_index_details for {table_name}: {e}") from e
+        
+        try:
+            grants_details = self._build_grants_details(table_name)
+        except Exception as e:
+            raise Exception(f"Error in _build_grants_details for {table_name}: {e}") from e
 
-        # Always fill storage parameters from metadata, never leave null
-        for k in [
-            "compression",
-            "compress_for",
-            "pct_free",
-            "ini_trans",
-            "max_trans",
-            "initial_extent",
-            "next_extent",
-            "buffer_pool",
-        ]:
-            if k not in storage_params or storage_params[k] is None:
-                storage_params[k] = ""  # Use empty string if not available
+        # Build typed available columns
+        available_columns = AvailableColumns(
+            timestamp_columns=[
+                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"])
+                for col in timestamp_columns
+            ],
+            numeric_columns=[
+                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"])
+                for col in numeric_columns
+            ],
+            string_columns=[
+                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"])
+                for col in string_columns
+            ]
+        )
 
-        # Enhanced current_state with all metadata details
-        enhanced_current_state = {
-            **current_state,
-            "columns": columns_metadata,
-            "lob_storage": lob_storage_details,
-            "storage_parameters": storage_params,
-            "indexes": index_details,
-            "available_columns": {
-                "timestamp_columns": timestamp_columns,
-                "numeric_columns": numeric_columns,
-                "string_columns": string_columns,
-            },
-        }
+        # Build typed current state
+        current_state_obj = CurrentState(
+            is_partitioned=current_state["is_partitioned"],
+            partition_type=current_state["partition_type"],
+            size_gb=current_state["size_gb"],
+            row_count=current_state["row_count"],
+            lob_count=current_state["lob_count"],
+            index_count=current_state["index_count"],
+            columns=columns_metadata,
+            lob_storage=lob_storage_details,
+            storage_parameters=storage_params,
+            indexes=index_details,
+            available_columns=available_columns,
+            grants=grants_details,
+        )
 
-        # Common settings that can be modified
-        common_settings = {
-            "new_table_name": f"{table_name}_NEW",
-            "old_table_name": f"{table_name}_OLD",
-            "migration_action": migration_action,
-            "target_configuration": target_configuration,
-            "migration_settings": {
-                "estimated_hours": estimated_hours,
-                "priority": priority,
-                "validate_data": True,
-                "backup_old_table": True,
-                "drop_old_after_days": 7,
-            },
-        }
+        # Add optional fields if partitioned
+        if is_partitioned:
+            current_state_obj.is_interval = is_interval
+            current_state_obj.interval_definition = partition_info.get("interval_definition")
+            current_state_obj.current_partition_count = partition_info.get("partition_count")
+            current_state_obj.current_partition_key = (
+                ", ".join(partition_key_columns) if partition_key_columns else None
+            )
+            current_state_obj.has_subpartitions = has_subpartitions
+            current_state_obj.subpartition_type = partition_info.get("subpartitioning_type")
+            current_state_obj.subpartition_count = partition_info.get("def_subpartition_count")
 
-        table_config = {
-            "enabled": should_enable,
-            "owner": self.schema,
-            "table_name": table_name,
-            "current_state": enhanced_current_state,
-            "common_settings": common_settings,
-        }
+        # Build typed target configuration
+        target_config_obj = TargetConfiguration(
+            partition_type=PartitionType(target_configuration["partition_type"]),
+            partition_column=target_configuration["partition_column"],
+            interval_type=IntervalType(target_configuration["interval_type"]),
+            interval_value=target_configuration["interval_value"],
+            initial_partition_value=target_configuration["initial_partition_value"],
+            subpartition_type=SubpartitionType(target_configuration["subpartition_type"]),
+            subpartition_column=target_configuration["subpartition_column"],
+            subpartition_count=target_configuration["subpartition_count"],
+            tablespace=target_configuration["tablespace"],
+            lob_tablespaces=target_configuration["lob_tablespaces"],
+            parallel_degree=target_configuration["parallel_degree"],
+        )
+
+        # Build typed migration settings
+        migration_settings_obj = MigrationSettings(
+            validate_data=True,
+            backup_old_table=True,
+            drop_old_after_days=7,
+        )
+
+        # Build typed common settings
+        common_settings_obj = CommonSettings(
+            new_table_name=f"{table_name}_NEW",
+            old_table_name=f"{table_name}_OLD",
+            migration_action=MigrationAction(migration_action),
+            target_configuration=target_config_obj,
+            migration_settings=migration_settings_obj,
+        )
+
+        # Build final typed table configuration
+        table_config = TableConfig(
+            enabled=should_enable,
+            owner=self.schema,
+            table_name=table_name,
+            current_state=current_state_obj,
+            common_settings=common_settings_obj,
+        )
 
         return table_config
 
@@ -957,23 +1044,70 @@ class TableDiscovery:
         else:
             return 2
 
-    def _estimate_migration_time(self, size_gb: float, index_count: int) -> float:
-        """Estimate migration time in hours"""
-        # Data load: 8 GB/hour (conservative)
-        # Index creation: 0.75 hours per index
-        load_time = size_gb / 8 if size_gb > 0 else 0.1
-        index_time = index_count * 0.75
-        total = load_time + index_time
-        return round(total, 1)
+    def _extract_database_service(self) -> str:
+        """Extract database service name from connection string"""
+        if not self.connection_string:
+            return "Unknown"
 
-    def _determine_priority(self, size_gb: float, lob_count: int) -> str:
-        """Determine migration priority"""
-        if size_gb > 50:
-            return "HIGH"
-        elif lob_count > 0 or size_gb > 10:
-            return "MEDIUM"
-        else:
-            return "LOW"
+        try:
+            # Parse connection string to extract service name
+            # Format: user/pass@host:port/service or user/pass@host:port:sid
+            if '@' in self.connection_string:
+                conn_part = self.connection_string.split('@')[1]
+                if '/' in conn_part:
+                    # Service name format: host:port/service
+                    service = conn_part.split('/')[-1]
+                    return service
+                elif ':' in conn_part and conn_part.count(':') == 2:
+                    # SID format: host:port:sid
+                    service = conn_part.split(':')[-1]
+                    return service
+                else:
+                    return conn_part
+            return "Unknown"
+        except Exception:
+            return "Unknown"
+
+    def _extract_connection_details(self) -> Dict[str, str]:
+        """Extract connection details for metadata tracking"""
+        if not self.connection_string:
+            return {"type": "Unknown", "host": "Unknown", "port": "Unknown", "service": "Unknown"}
+
+        try:
+            # Parse connection string: user/pass@host:port/service
+            if '@' in self.connection_string:
+                user_part, conn_part = self.connection_string.split('@', 1)
+                user = user_part.split('/')[0] if '/' in user_part else user_part
+
+                if '/' in conn_part:
+                    # Service name format
+                    host_port, service = conn_part.rsplit('/', 1)
+                    if ':' in host_port:
+                        host, port = host_port.rsplit(':', 1)
+                    else:
+                        host, port = host_port, "1521"
+
+                    return {
+                        "type": "Service Name",
+                        "host": host,
+                        "port": port,
+                        "service": service,
+                        "user": user
+                    }
+                elif ':' in conn_part and conn_part.count(':') == 2:
+                    # SID format: host:port:sid
+                    parts = conn_part.split(':')
+                    return {
+                        "type": "SID",
+                        "host": parts[0],
+                        "port": parts[1],
+                        "service": parts[2],
+                        "user": user
+                    }
+
+            return {"type": "Unknown", "connection_string": self.connection_string}
+        except Exception as e:
+            return {"type": "Error", "error": str(e)}
 
     def _format_criteria(
         self,
@@ -991,11 +1125,497 @@ class TableDiscovery:
 
         return ", ".join(parts)
 
-    def save_config(self, config: Dict, output_file: str = "migration_config.json"):
-        """Save configuration to JSON file"""
-        with open(output_file, "w") as f:
-            json.dump(config, f, indent=2, default=str)
+    def _build_columns_metadata(self, table_name: str) -> List[ColumnInfo]:
+        """Build typed column metadata"""
+        raw_columns = self._get_all_columns_metadata(table_name)
+        return [
+            ColumnInfo(
+                name=col["name"],
+                type=col["type"],
+                length=col.get("length"),
+                precision=col.get("precision"),
+                scale=col.get("scale"),
+                nullable=col["nullable"],
+                default=col.get("default"),
+                char_length=col.get("char_length"),
+                is_identity=col.get("is_identity", False),
+                identity_generation=col.get("identity_generation"),
+                identity_sequence=col.get("identity_sequence"),
+                identity_start_with=col.get("identity_start_with"),
+                identity_increment_by=col.get("identity_increment_by"),
+                identity_max_value=col.get("identity_max_value"),
+                identity_min_value=col.get("identity_min_value"),
+                identity_cache_size=col.get("identity_cache_size"),
+                identity_cycle_flag=col.get("identity_cycle_flag"),
+                identity_order_flag=col.get("identity_order_flag"),
+            )
+            for col in raw_columns
+        ]
 
+    def _build_lob_storage_details(self, table_name: str) -> List[LobStorageInfo]:
+        """Build typed LOB storage details"""
+        raw_lobs = self._get_lob_storage_details(table_name)
+        return [
+            LobStorageInfo(
+                column_name=lob["column_name"],
+                segment_name=lob["segment_name"],
+                tablespace_name=lob["tablespace_name"],
+                original_tablespace=lob["original_tablespace"],
+                securefile=lob["securefile"],
+                compression=lob["compression"],
+                deduplication=lob["deduplication"],
+                in_row=lob["in_row"],
+                chunk=lob["chunk"],
+                cache=lob["cache"],
+            )
+            for lob in raw_lobs
+        ]
+
+    def _build_storage_parameters(self, table_name: str) -> StorageParameters:
+        """Build typed storage parameters"""
+        raw_params = self._get_table_storage_params(table_name)
+        return StorageParameters(
+            compression=raw_params.get("compression", "DISABLED"),
+            compress_for=raw_params.get("compress_for", ""),
+            pct_free=raw_params.get("pct_free", 10),
+            ini_trans=raw_params.get("ini_trans", 1),
+            max_trans=raw_params.get("max_trans", 255),
+            initial_extent=raw_params.get("initial_extent"),
+            next_extent=raw_params.get("next_extent"),
+            buffer_pool=raw_params.get("buffer_pool", "DEFAULT"),
+        )
+
+    def _build_index_details(self, table_name: str) -> List[IndexInfo]:
+        """Build typed index details"""
+        raw_indexes = self._get_index_details(table_name)
+        return [
+            IndexInfo(
+                index_name=idx["index_name"],
+                index_type=idx["index_type"],
+                uniqueness=idx["uniqueness"],
+                tablespace_name=idx["tablespace_name"],
+                compression=idx["compression"],
+                pct_free=idx["pct_free"],
+                ini_trans=idx["ini_trans"],
+                max_trans=idx["max_trans"],
+                degree=idx["degree"],
+                partitioned=idx["partitioned"],
+                columns=idx["columns"],
+                is_reverse=idx.get("is_reverse", False),
+                locality=idx.get("locality"),
+            )
+            for idx in raw_indexes
+        ]
+
+    def _build_grants_details(self, table_name: str) -> List[GrantInfo]:
+        """Build typed grants details"""  
+        raw_grants = self._get_table_grants(table_name)
+        return [
+            GrantInfo(
+                grantee=grant["grantee"],
+                privilege=grant["privilege"],
+                grantable=grant["grantable"],
+                grantor=grant["grantor"],
+                grant_type=grant["grant_type"],
+            )
+            for grant in raw_grants
+        ]
+
+    def _build_connection_details(self) -> ConnectionDetails:
+        """Build typed connection details"""
+        if not self.connection_string:
+            return ConnectionDetails(
+                type="Unknown", host="Unknown", port="Unknown", 
+                service="Unknown", user="Unknown"
+            )
+
+        try:
+            if '@' in self.connection_string:
+                user_part, conn_part = self.connection_string.split('@', 1)
+                user = user_part.split('/')[0] if '/' in user_part else user_part
+
+                if '/' in conn_part:
+                    host_port, service = conn_part.rsplit('/', 1)
+                    if ':' in host_port:
+                        host, port = host_port.rsplit(':', 1)
+                    else:
+                        host, port = host_port, "1521"
+
+                    return ConnectionDetails(
+                        type="Service Name", host=host, port=port, 
+                        service=service, user=user
+                    )
+
+            return ConnectionDetails(
+                type="Unknown", host="Unknown", port="Unknown",
+                service="Unknown", user="Unknown"
+            )
+        except Exception:
+            return ConnectionDetails(
+                type="Error", host="Unknown", port="Unknown",
+                service="Unknown", user="Unknown"
+            )
+
+    def _build_environment_config(self) -> EnvironmentConfig:
+        """Build typed environment configuration"""
+        try:
+            env_config = self.env_manager.load_environment_config(self.environment)
+            return EnvironmentConfig(
+                name=env_config.environment,
+                tablespaces=DataTablespaces(
+                    data=TablespaceConfig(
+                        primary=env_config.tablespaces.primary,
+                        lob=env_config.tablespaces.lob,
+                    )
+                ),
+                subpartition_defaults=SubpartitionDefaults(
+                    min_count=env_config.subpartition_defaults.min_count,
+                    max_count=env_config.subpartition_defaults.max_count,
+                    size_based_recommendations={
+                        k: SizeRecommendation(max_gb=v["max_gb"], count=v["count"])
+                        for k, v in env_config.subpartition_defaults.size_based_recommendations.items()
+                    },
+                ),
+                parallel_defaults=ParallelDefaults(
+                    min_degree=env_config.parallel_defaults.min_degree,
+                    max_degree=env_config.parallel_defaults.max_degree,
+                    default_degree=env_config.parallel_defaults.default_degree,
+                ),
+            )
+        except Exception as e:
+            print(f"Warning: Could not load environment config: {e}")
+            # Use default environment config
+            return EnvironmentConfig(
+                name=self.environment,
+                tablespaces=DataTablespaces(
+                    data=TablespaceConfig(
+                        primary="USERS",
+                        lob=["GD_LOB_01", "GD_LOB_02", "GD_LOB_03", "GD_LOB_04"],
+                    )
+                ),
+                subpartition_defaults=SubpartitionDefaults(
+                    min_count=2,
+                    max_count=16,
+                    size_based_recommendations={
+                        "small": SizeRecommendation(max_gb=1, count=2),
+                        "medium": SizeRecommendation(max_gb=10, count=4),
+                        "large": SizeRecommendation(max_gb=50, count=8),
+                        "xlarge": SizeRecommendation(max_gb=100, count=12),
+                        "xxlarge": SizeRecommendation(max_gb=999999, count=16),
+                    },
+                ),
+                parallel_defaults=ParallelDefaults(
+                    min_degree=1,
+                    max_degree=8,
+                    default_degree=4,
+                ),
+            )
+
+    def _get_constraint_info(self) -> Dict[str, List[Dict]]:
+        """Get all constraint information for tables in schema"""
+        query = """
+        SELECT 
+            c.table_name,
+            c.constraint_name,
+            c.constraint_type,
+            c.status,
+            c.validated,
+            c.deferrable,
+            c.deferred,
+            c.rely,
+            c.search_condition_vc,
+            c.delete_rule,
+            CASE 
+                WHEN c.constraint_type = 'R' THEN c.r_owner || '.' || 
+                     (SELECT table_name FROM all_constraints WHERE constraint_name = c.r_constraint_name AND rownum = 1)
+                ELSE NULL
+            END as referenced_table,
+            c.r_constraint_name as referenced_constraint,
+            RTRIM(XMLAGG(XMLELEMENT(e, cc.column_name || ', ') ORDER BY cc.position).EXTRACT('//text()').getClobVal(), ', ') as columns,
+            CASE 
+                WHEN c.constraint_type = 'P' THEN 'Primary Key'
+                WHEN c.constraint_type = 'R' THEN 'Foreign Key'
+                WHEN c.constraint_type = 'U' THEN 'Unique'
+                WHEN c.constraint_type = 'C' THEN 'Check'
+                WHEN c.constraint_type = 'V' THEN 'View Check'
+                WHEN c.constraint_type = 'O' THEN 'View Readonly'
+                ELSE 'Other'
+            END as constraint_description
+        FROM all_constraints c
+        LEFT JOIN all_cons_columns cc ON c.constraint_name = cc.constraint_name 
+            AND c.owner = cc.owner
+            AND c.table_name = cc.table_name
+        WHERE c.owner = :schema_name
+        AND c.table_name IN (SELECT table_name FROM all_tables WHERE owner = :schema_name)
+        GROUP BY c.table_name, c.constraint_name, c.constraint_type, c.status, 
+                 c.validated, c.deferrable, c.deferred, c.rely, c.search_condition_vc,
+                 c.delete_rule, c.r_owner, c.r_constraint_name
+        ORDER BY c.table_name, c.constraint_type, c.constraint_name
+        """
+        
+        cursor = self.connection.cursor()
+        cursor.execute(query, schema_name=self.schema)
+        
+        constraint_info = {}
+        for row in cursor.fetchall():
+            table_name = row[0]
+            if table_name not in constraint_info:
+                constraint_info[table_name] = []
+            
+            constraint_info[table_name].append({
+                'constraint_name': row[1],
+                'constraint_type': row[2],
+                'constraint_description': row[13],  # constraint_description is the last column
+                'status': row[3],
+                'validated': row[4],
+                'deferrable': row[5],
+                'deferred': row[6],
+                'rely': row[7],
+                'search_condition': row[8],
+                'delete_rule': row[9],
+                'referenced_table': row[10],
+                'referenced_constraint': row[11],
+                'columns': row[12],  # columns from LISTAGG
+            })
+        
+        cursor.close()
+        return constraint_info
+
+    def _get_referential_integrity(self) -> Dict[str, Dict]:
+        """Get referential integrity relationships between tables"""
+        query = """
+        WITH fk_relationships AS (
+            SELECT 
+                p.table_name as parent_table,
+                c.table_name as child_table,
+                c.constraint_name,
+                c.delete_rule,
+                LISTAGG(pcc.column_name, ', ') WITHIN GROUP (ORDER BY pcc.position) as parent_columns,
+                LISTAGG(ccc.column_name, ', ') WITHIN GROUP (ORDER BY ccc.position) as child_columns,
+                COUNT(*) OVER (PARTITION BY c.table_name) as fk_count_in_child,
+                COUNT(*) OVER (PARTITION BY p.table_name) as fk_count_from_parent
+            FROM all_constraints c
+            JOIN all_constraints p ON c.r_constraint_name = p.constraint_name
+                AND c.owner = p.owner
+            JOIN all_cons_columns ccc ON c.constraint_name = ccc.constraint_name
+                AND c.owner = ccc.owner
+                AND c.table_name = ccc.table_name
+            JOIN all_cons_columns pcc ON p.constraint_name = pcc.constraint_name 
+                AND p.owner = pcc.owner
+                AND p.table_name = pcc.table_name
+                AND ccc.position = pcc.position
+            WHERE c.constraint_type = 'R'
+            AND c.owner = :schema_name
+            AND p.owner = :schema_name
+            GROUP BY p.table_name, c.table_name, c.constraint_name, c.delete_rule
+        )
+        SELECT 
+            parent_table,
+            child_table, 
+            constraint_name,
+            delete_rule,
+            parent_columns,
+            child_columns,
+            fk_count_in_child,
+            fk_count_from_parent,
+            CASE 
+                WHEN fk_count_from_parent > 5 THEN 'High Dependency'
+                WHEN fk_count_from_parent > 2 THEN 'Medium Dependency' 
+                ELSE 'Low Dependency'
+            END as dependency_level
+        FROM fk_relationships
+        ORDER BY parent_table, child_table
+        """
+        
+        cursor = self.connection.cursor()
+        cursor.execute(query, schema_name=self.schema)
+        
+        relationships = {
+            'parent_child_relationships': [],
+            'dependency_summary': {},
+            'constraint_details': {}
+        }
+        
+        for row in cursor.fetchall():
+            parent_table, child_table = row[0], row[1]
+            constraint_name = row[2]
+            
+            # Add to relationships
+            relationships['parent_child_relationships'].append({
+                'parent_table': parent_table,
+                'child_table': child_table,
+                'constraint_name': constraint_name,
+                'delete_rule': row[3],
+                'parent_columns': row[4],
+                'child_columns': row[5],
+                'dependency_level': row[8]
+            })
+            
+            # Track dependency summary
+            if parent_table not in relationships['dependency_summary']:
+                relationships['dependency_summary'][parent_table] = {
+                    'children_count': 0,
+                    'children': [],
+                    'dependency_level': 'Low Dependency'
+                }
+            
+            relationships['dependency_summary'][parent_table]['children'].append(child_table)
+            relationships['dependency_summary'][parent_table]['children_count'] = row[7]
+            relationships['dependency_summary'][parent_table]['dependency_level'] = row[8]
+            
+            # Store constraint details
+            relationships['constraint_details'][constraint_name] = {
+                'parent_table': parent_table,
+                'child_table': child_table,
+                'parent_columns': row[4],
+                'child_columns': row[5],
+                'delete_rule': row[3]
+            }
+        
+        cursor.close()
+        return relationships
+
+    def _get_composite_index_info(self) -> Dict[str, List[Dict]]:
+        """Get detailed information about composite and function-based indexes"""
+        query = """
+        SELECT 
+            i.table_name,
+            i.index_name,
+            i.index_type,
+            i.uniqueness,
+            i.tablespace_name,
+            i.compression,
+            i.pct_free,
+            i.ini_trans,
+            i.max_trans,
+            i.degree,
+            i.partitioned,
+            LISTAGG(
+                CASE 
+                    WHEN ic.descend = 'DESC' THEN ic.column_name || ' DESC'
+                    ELSE ic.column_name 
+                END, 
+                ', '
+            ) WITHIN GROUP (ORDER BY ic.column_position) as columns,
+            COUNT(ic.column_name) as column_count,
+            ie.column_expression,
+            CASE 
+                WHEN COUNT(ic.column_name) > 1 THEN 'Composite'
+                WHEN ie.column_expression IS NOT NULL THEN 'Function-Based'
+                ELSE 'Simple'
+            END as index_complexity
+        FROM all_indexes i
+        LEFT JOIN all_ind_columns ic ON i.index_name = ic.index_name
+        LEFT JOIN all_ind_expressions ie ON i.index_name = ie.index_name 
+            AND ic.column_position = ie.column_position
+        WHERE i.table_owner = :schema_name
+        AND i.table_name IN (SELECT table_name FROM all_tables WHERE owner = :schema_name)
+        GROUP BY i.table_name, i.index_name, i.index_type, i.uniqueness, 
+                 i.tablespace_name, i.compression, i.pct_free, i.ini_trans, 
+                 i.max_trans, i.degree, i.partitioned, ie.column_expression
+        ORDER BY i.table_name, index_complexity DESC, i.index_name
+        """
+        
+        cursor = self.connection.cursor()
+        cursor.execute(query, schema_name=self.schema)
+        
+        index_info = {}
+        for row in cursor.fetchall():
+            table_name = row[0]
+            if table_name not in index_info:
+                index_info[table_name] = []
+            
+            index_info[table_name].append({
+                'index_name': row[1],
+                'index_type': row[2],
+                'uniqueness': row[3],
+                'tablespace_name': row[4],
+                'compression': row[5],
+                'pct_free': row[6],
+                'ini_trans': row[7],
+                'max_trans': row[8],
+                'degree': row[9],
+                'partitioned': row[10],
+                'columns': row[11],
+                'column_count': row[12],
+                'column_expression': row[13],
+                'index_complexity': row[14]
+            })
+        
+        cursor.close()
+        return index_info
+
+    def _get_table_grants(self, table_name: str) -> List[Dict]:
+        """Get all grants/privileges for a specific table"""
+        cursor = self.connection.cursor()
+        
+        query = """
+        SELECT 
+            grantee,
+            privilege,
+            grantable,
+            grantor
+        FROM all_tab_privs
+        WHERE table_schema = :schema
+        AND table_name = :table_name
+        AND grantee NOT IN ('SYS', 'SYSTEM', 'PUBLIC')  -- Exclude system grantees
+        ORDER BY grantee, privilege
+        """
+        
+        cursor.execute(query, schema=self.schema, table_name=table_name)
+        
+        grants = []
+        for row in cursor.fetchall():
+            grants.append({
+                'grantee': row[0],
+                'privilege': row[1],
+                'grantable': row[2],
+                'grantor': row[3],
+                'grant_type': 'OBJECT'
+            })
+        
+        cursor.close()
+        return grants
+
+    def _get_all_table_grants(self) -> Dict[str, List[Dict]]:
+        """Get grants information for all tables in schema"""
+        cursor = self.connection.cursor()
+        
+        query = """
+        SELECT 
+            table_name,
+            grantee,
+            privilege,
+            grantable,
+            grantor
+        FROM all_tab_privs
+        WHERE table_schema = :schema
+        AND grantee NOT IN ('SYS', 'SYSTEM', 'PUBLIC')  -- Exclude system grantees
+        ORDER BY table_name, grantee, privilege
+        """
+        
+        cursor.execute(query, schema=self.schema)
+        
+        grants_info = {}
+        for row in cursor.fetchall():
+            table_name = row[0]
+            if table_name not in grants_info:
+                grants_info[table_name] = []
+            
+            grants_info[table_name].append({
+                'grantee': row[1],
+                'privilege': row[2],
+                'grantable': row[3],
+                'grantor': row[4],
+                'grant_type': 'OBJECT'
+            })
+        
+        cursor.close()
+        return grants_info
+
+    def save_config(self, config: MigrationConfig, output_file: str = "migration_config.json"):
+        """Save configuration to JSON file using automatic serialization"""
+        config.save_to_file(output_file)
         print(f"✓ Configuration saved to: {output_file}")
         print("  Edit this file to customize migration settings")
         print(f"  Then run: python3 generate_scripts.py --config {output_file}")

@@ -1,0 +1,1 @@
+d /home/swapa/code/oracle-table-migration && grep -n "FROM all_\|JOIN all_" lib/discovery_queries.py | head -15

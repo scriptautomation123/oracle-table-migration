@@ -1,0 +1,23 @@
+{
+    "connection": {
+        "type": "sqlcl",
+        "connection_name": ""
+    },
+    "discovery": {
+        "schema": "APP_DATA_OWNER",
+        "table_patterns": ["*"],
+        "include_constraints": true,
+        "include_indexes": true,
+        "include_partitioning": true,
+        "include_lob_details": true,
+        "include_identity_columns": true,
+        "output_file": "/home/swapa/code/oracle-table-migration/discovery_output/discovered_schema_20251025_213343.json"
+    },
+    "analysis": {
+        "recommend_partitioning": true,
+        "size_thresholds": {
+            "small_table_mb": 100,
+            "large_table_gb": 10
+        }
+    }
+}
