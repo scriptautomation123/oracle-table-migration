@@ -162,4 +162,25 @@ BEGIN
 END;
 /
 
+-- Validate delta load results
+PROMPT
+PROMPT Validating delta load results...
+DECLARE
+    v_target_count NUMBER;
+    v_delta_applied BOOLEAN := FALSE;
+BEGIN
+    -- Count rows in target table
+    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM {{ owner }}.{{ new_table_name }}' INTO v_target_count;
+    
+    DBMS_OUTPUT.PUT_LINE('Target table row count: ' || TO_CHAR(v_target_count, '999,999,999,999'));
+    
+    IF :v_insert_count > 0 THEN
+        DBMS_OUTPUT.PUT_LINE('✓ Delta load applied: ' || TO_CHAR(:v_insert_count, '999,999,999,999') || ' rows processed');
+        v_delta_applied := TRUE;
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('✓ No delta changes found - skipping load');
+    END IF;
+END;
+/
+
 PROMPT ✓ Step 40 Complete: Delta load finished

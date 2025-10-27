@@ -38,7 +38,7 @@ class TableDiscovery:
         Initialize discovery with database connection
 
         Args:
-            connection: Oracle database connection (oracledb or cx_Oracle)
+            connection: Oracle database connection (python-oracledb)
             environment: Environment name for configuration
             connection_string: Connection string for metadata tracking
         """

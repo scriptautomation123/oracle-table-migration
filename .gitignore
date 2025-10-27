@@ -12,6 +12,7 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+**/__pycache__
 
 # Logs and temporary files
 *.log

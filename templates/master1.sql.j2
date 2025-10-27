@@ -94,8 +94,9 @@ PROMPT ================================================================
 
 -- Validate Step 00
 SELECT 'Disabled constraints: ' || COUNT(*) as step_00_result
-FROM user_constraints 
-WHERE table_name = '{{ table_name }}' 
+FROM all_constraints 
+WHERE owner = '{{ owner }}' 
+AND table_name = '{{ table_name }}' 
 AND status = 'DISABLED';
 
 PROMPT Step 00 complete ✓
@@ -277,15 +278,17 @@ PROMPT ================================================================
 
 -- Validate Step 80
 SELECT 'Enabled constraints: ' || COUNT(*) as step_80_result
-FROM user_constraints
-WHERE table_name = '{{ table_name }}'
+FROM all_constraints
+WHERE owner = '{{ owner }}'
+AND table_name = '{{ table_name }}'
 AND status = 'ENABLED'
 AND constraint_type IN ('P','R','U','C')
 AND constraint_name NOT LIKE 'SYS_%';
 
 SELECT 'Invalid constraints: ' || COUNT(*) as step_80_validation
-FROM user_constraints  
-WHERE table_name = '{{ table_name }}'
+FROM all_constraints  
+WHERE owner = '{{ owner }}'
+AND table_name = '{{ table_name }}'
 AND status = 'ENABLED'
 AND validated = 'NOT VALIDATED';
 
@@ -325,8 +328,9 @@ FROM (SELECT COUNT(*) cnt FROM {{ owner }}.{{ table_name }}_OLD) o,
 -- Constraint validation  
 SELECT 'CONSTRAINT VALIDATION:' as validation_type FROM dual;
 SELECT constraint_type || ' constraints: ' || COUNT(*) as final_validation
-FROM user_constraints
-WHERE table_name = '{{ table_name }}'
+FROM all_constraints
+WHERE owner = '{{ owner }}'
+AND table_name = '{{ table_name }}'
 AND status = 'ENABLED'  
 AND constraint_name NOT LIKE 'SYS_%'
 GROUP BY constraint_type
@@ -335,24 +339,28 @@ ORDER BY constraint_type;
 -- Index validation
 SELECT 'INDEX VALIDATION:' as validation_type FROM dual;
 SELECT 'Total indexes: ' || COUNT(*) as final_validation  
-FROM user_indexes
-WHERE table_name = '{{ table_name }}';
+FROM all_indexes
+WHERE owner = '{{ owner }}'
+AND table_name = '{{ table_name }}';
 
 SELECT index_type || ' indexes: ' || COUNT(*) as final_validation
-FROM user_indexes
-WHERE table_name = '{{ table_name }}'  
+FROM all_indexes
+WHERE owner = '{{ owner }}'
+AND table_name = '{{ table_name }}'  
 GROUP BY index_type
 ORDER BY index_type;
 
 -- Partitioning validation
 SELECT 'PARTITION VALIDATION:' as validation_type FROM dual;
 SELECT 'Partition type: ' || partitioning_type as final_validation
-FROM user_part_tables  
-WHERE table_name = '{{ table_name }}';
+FROM all_part_tables  
+WHERE owner = '{{ owner }}'
+AND table_name = '{{ table_name }}';
 
 SELECT 'Partition count: ' || COUNT(*) as final_validation
-FROM user_tab_partitions
-WHERE table_name = '{{ table_name }}';
+FROM all_tab_partitions
+WHERE table_owner = '{{ owner }}'
+AND table_name = '{{ table_name }}';
 
 -- Performance validation (sample query)
 SELECT 'PERFORMANCE VALIDATION:' as validation_type FROM dual;
@@ -388,11 +396,11 @@ PROMPT ================================================================
 -- Final status check
 SELECT 
     CASE 
-        WHEN EXISTS (SELECT 1 FROM user_constraints WHERE table_name = '{{ table_name }}' AND status = 'DISABLED')
+        WHEN EXISTS (SELECT 1 FROM all_constraints WHERE owner = '{{ owner }}' AND table_name = '{{ table_name }}' AND status = 'DISABLED')
         THEN 'WARNING: Some constraints still disabled ⚠️'
-        WHEN NOT EXISTS (SELECT 1 FROM user_tables WHERE table_name = '{{ table_name }}')  
+        WHEN NOT EXISTS (SELECT 1 FROM all_tables WHERE owner = '{{ owner }}' AND table_name = '{{ table_name }}')  
         THEN 'ERROR: Target table missing ✗'
-        WHEN EXISTS (SELECT 1 FROM user_part_tables WHERE table_name = '{{ table_name }}' AND partitioning_type = '{{ common_settings.target_configuration.partition_type }}')
+        WHEN EXISTS (SELECT 1 FROM all_part_tables WHERE owner = '{{ owner }}' AND table_name = '{{ table_name }}' AND partitioning_type = '{{ common_settings.target_configuration.partition_type }}')
         THEN 'SUCCESS: Migration completed successfully ✅'
         ELSE 'WARNING: Validation incomplete ⚠️'
     END as FINAL_STATUS

@@ -33,12 +33,9 @@ from typing import Dict, List
 try:
     import oracledb
 except ImportError:
-    try:
-        import cx_Oracle as oracledb
-    except ImportError:
-        print("WARNING: Neither oracledb nor cx_Oracle found")
-        print("Install with: pip install oracledb")
-        oracledb = None
+    print("ERROR: python-oracledb module not found!")
+    print("Install with: pip install oracledb")
+    oracledb = None
 
 
 class ValidationResult:
@@ -120,7 +117,7 @@ class MigrationValidator:
     def connect(self):
         """Establish database connection"""
         if not oracledb:
-            raise ImportError("oracledb or cx_Oracle required")
+            raise ImportError("python-oracledb required")
 
         try:
             self.logger.info("Connecting to database...")

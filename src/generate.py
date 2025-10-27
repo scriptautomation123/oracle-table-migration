@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol, Any, Generator
+from typing import Dict, List, Optional, Protocol, Any, Generator, Tuple
 from abc import ABC, abstractmethod
 
 # Add project root to path for imports
@@ -36,17 +36,17 @@ except ImportError:
 
 try:
     import oracledb
+    
+    # Initialize Oracle thick mode (optional, enables more features)
     try:
         oracledb.init_oracle_client()
         print("Oracle thick mode enabled")
     except Exception as e:
-        print(f"WARNING: Could not initialize Oracle Client: {e}")
+        # Thin mode is fine - fallback to thin mode
+        print(f"Oracle thin mode: {e}")
 except ImportError:
-    try:
-        import cx_Oracle as oracledb
-    except ImportError:
-        print("WARNING: Oracle driver not found. Install with: pip install oracledb")
-        oracledb = None
+    print("ERROR: python-oracledb not found. Install with: pip install oracledb")
+    sys.exit(1)
 
 # Local imports
 from lib.config_validator import ConfigValidator
@@ -104,6 +104,7 @@ class MigrationConfig:
     template_dir: str = Constants.DEFAULT_TEMPLATE_DIR
     output_dir: str = Constants.DEFAULT_OUTPUT_DIR
     environment: Optional[str] = None
+    thin_ldap: bool = False
 
 
 @dataclass
@@ -136,9 +137,35 @@ class TemplateServiceProtocol(Protocol):
 class DatabaseService:
     """Handles database connections and operations"""
     
-    def __init__(self, connection_string: str):
+    def __init__(self, connection_string: str, thin_ldap: bool = False):
         self.connection_string = connection_string
+        self.thin_ldap = thin_ldap
         self._connection: Optional[Any] = None
+    
+    def _parse_ldap_servers(self, dsn: str) -> Tuple[str, str, str]:
+        """Parse LDAP DSN to extract servers, port, and DN"""
+        if not dsn.startswith('ldap://'):
+            return None, None, None
+        
+        dsn = dsn.replace('ldap://', '', 1)
+        
+        if '/' in dsn:
+            server_part, dn_part = dsn.split('/', 1)
+        else:
+            server_part = dsn
+            dn_part = ""
+        
+        if ':' in server_part:
+            servers, port = server_part.rsplit(':', 1)
+        else:
+            servers = server_part
+            port = "389"
+        
+        return servers, port, dn_part
+    
+    def _build_ldap_dsn(self, servers: str, port: str, dn: str) -> str:
+        """Build LDAP DSN from components"""
+        return f"ldap://{servers}:{port}/{dn}"
     
     @contextmanager
     def connection(self) -> Generator[Any, None, None]:
@@ -151,14 +178,73 @@ class DatabaseService:
         
         try:
             print("Connecting to database...")
-            # Check if connecting as SYS user - requires SYSDBA mode
-            if self.connection_string.lower().startswith('sys/'):
+            
+            if '@' in self.connection_string:
+                user_pass, dsn_part = self.connection_string.rsplit('@', 1)
+                is_sys = user_pass.lower().startswith('sys/')
+            else:
+                user_pass = None
+                dsn_part = self.connection_string
+                is_sys = False
+            
+            if self.thin_ldap and dsn_part.startswith('ldap://'):
+                servers, port, dn = self._parse_ldap_servers(dsn_part)
+                
+                if servers:
+                    server_list = [s.strip() for s in servers.split(',')]
+                    
+                    if len(server_list) > 1:
+                        print(f"Trying with {len(server_list)} LDAP servers...")
+                        dsn_multi = self._build_ldap_dsn(servers, port, dn)
+                        try:
+                            if is_sys:
+                                self._connection = oracledb.connect(
+                                    dsn=dsn_multi,
+                                    mode=oracledb.AUTH_MODE_SYSDBA
+                                )
+                            else:
+                                self._connection = oracledb.connect(
+                                    dsn=dsn_multi,
+                                    user=user_pass.split('/')[0] if '/' in user_pass else None,
+                                    password=user_pass.split('/')[1] if '/' in user_pass else None
+                                )
+                            print("✓ Connected successfully with multiple LDAP servers")
+                            yield self._connection
+                            return
+                        except Exception as e:
+                            print(f"Multiple servers failed: {e}, trying single server...")
+                            dsn_single = self._build_ldap_dsn(server_list[0], port, dn)
+                            if is_sys:
+                                self._connection = oracledb.connect(
+                                    dsn=dsn_single,
+                                    mode=oracledb.AUTH_MODE_SYSDBA
+                                )
+                            else:
+                                self._connection = oracledb.connect(
+                                    dsn=dsn_single,
+                                    user=user_pass.split('/')[0] if '/' in user_pass else None,
+                                    password=user_pass.split('/')[1] if '/' in user_pass else None
+                                )
+                            print("✓ Connected successfully with single LDAP server")
+                            yield self._connection
+                            return
+            
+            if is_sys:
                 self._connection = oracledb.connect(
-                    self.connection_string, 
+                    dsn=dsn_part if dsn_part else self.connection_string,
                     mode=oracledb.AUTH_MODE_SYSDBA
                 )
             else:
-                self._connection = oracledb.connect(self.connection_string)
+                if user_pass and '/' in user_pass:
+                    user, password = user_pass.split('/', 1)
+                    self._connection = oracledb.connect(
+                        user=user,
+                        password=password,
+                        dsn=dsn_part if dsn_part else self.connection_string
+                    )
+                else:
+                    self._connection = oracledb.connect(dsn=dsn_part if dsn_part else self.connection_string)
+            
             print("✓ Connected successfully")
             yield self._connection
         except Exception as e:
@@ -289,7 +375,7 @@ class DiscoveryCommand(MigrationCommand):
         print("DISCOVERY MODE")
         print("=" * 70 + "\n")
         
-        database_service = DatabaseService(self.config.connection_string)
+        database_service = DatabaseService(self.config.connection_string, self.config.thin_ldap)
         
         try:
             with database_service.connection() as connection:
@@ -330,7 +416,7 @@ class ValidationCommand(MigrationCommand):
     
     def execute(self) -> bool:
         """Execute validation mode"""
-        database_service = DatabaseService(self.config.connection_string) if self.config.connection_string else None
+        database_service = DatabaseService(self.config.connection_string, self.config.thin_ldap) if self.config.connection_string else None
         config_service = ConfigService(database_service)
         
         try:
@@ -355,7 +441,7 @@ class GenerationCommand(MigrationCommand):
         print("GENERATION MODE")
         print("=" * 70 + "\n")
         
-        database_service = DatabaseService(self.config.connection_string) if self.config.connection_string else None
+        database_service = DatabaseService(self.config.connection_string, self.config.thin_ldap) if self.config.connection_string else None
         config_service = ConfigService(database_service)
         template_service = TemplateService(self.config.template_dir)
         
@@ -536,6 +622,7 @@ def create_command(args: argparse.Namespace) -> MigrationCommand:
         template_dir=args.template_dir,
         output_dir=args.output_dir,
         environment=args.environment,
+        thin_ldap=args.thin_ldap,
     )
     
     if args.discover:
@@ -576,6 +663,8 @@ def main() -> None:
                        help="Only validate configuration")
     parser.add_argument("--check-database", action="store_true",
                        help="Validate config against database")
+    parser.add_argument("--thin-ldap", action="store_true",
+                       help="Use thin client LDAP mode with fallback (try multiple servers, then single)")
     
     # Additional discovery options
     parser.add_argument("--include", type=str, nargs="+",

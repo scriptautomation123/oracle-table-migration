@@ -203,7 +203,7 @@ sqlcl user/pass@db @output/TABLE/master1.sql
 - Python 3.8+
 - Oracle database (accessible via sqlcl)
 - Required Python packages:
-  - oracledb (or cx_Oracle)
+  - oracledb (python-oracledb)
   - jinja2
   - jsonschema
 - Oracle client tools (sqlcl or sqlplus)

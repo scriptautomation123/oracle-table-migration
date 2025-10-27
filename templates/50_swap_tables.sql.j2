@@ -121,8 +121,9 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('Checking for invalidations...');
     FOR invalid_obj IN (
         SELECT object_name, object_type, status
-        FROM user_objects 
-        WHERE status = 'INVALID'
+        FROM all_objects 
+        WHERE owner = '{{ owner }}'
+        AND status = 'INVALID'
         AND object_name IN ('{{ table_name }}', '{{ old_table_name }}')
     ) LOOP
         DBMS_OUTPUT.PUT_LINE('WARNING: Invalid object found: ' || invalid_obj.object_type || 
@@ -138,6 +139,13 @@ END;
 
 -- Verify final state
 PROMPT Verifying table swap...
-@validation/verify_table_states.sql {{ owner }} {{ table_name }} {{ old_table_name }}
+BEGIN
+    @plsql-util.sql READONLY check_existence {{ owner }} {{ table_name }}
+    @plsql-util.sql READONLY check_existence {{ owner }} {{ old_table_name }}
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('Verification error: ' || SQLERRM);
+END;
+/
 
 PROMPT ✓ Step 50 Complete: Tables swapped successfully

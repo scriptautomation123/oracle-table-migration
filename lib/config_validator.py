@@ -10,14 +10,17 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from jsonschema import validate, ValidationError, Draft7Validator
-# from .migration_models import MigrationConfig, TableConfig  # Temporarily commented for regeneration
 
 try:
-    from jsonschema import ValidationError, validate
+    from .migration_models import MigrationConfig, TableConfig
 except ImportError:
-    print("ERROR: jsonschema module not found!")
-    print("Install with: pip install jsonschema")
-    exit(1)
+    try:
+        from lib.migration_models import MigrationConfig, TableConfig
+    except ImportError:
+        print("ERROR: migration_models module not found!")
+        print("Run: python3 src/schema_to_dataclass.py")
+        MigrationConfig = None
+        TableConfig = None
 
 
 class ConfigValidator:
@@ -491,13 +494,11 @@ if __name__ == "__main__":
         try:
             import oracledb
         except ImportError:
-            try:
-                import cx_Oracle as oracledb
-            except ImportError:
-                print(
-                    "ERROR: oracledb or cx_Oracle module required for database validation"
-                )
-                exit(1)
+            print(
+                "ERROR: python-oracledb module required for database validation"
+                "\nInstall with: pip install oracledb"
+            )
+            exit(1)
 
         try:
             connection = oracledb.connect(args.connection)

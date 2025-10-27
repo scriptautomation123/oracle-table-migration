@@ -60,14 +60,14 @@ BEGIN
 END;
 /
 
--- Get source row count using generic validation
-@validation/count_table_rows.sql {{ owner }} {{ table_name }} {{ current_state.row_count if current_state.row_count > 0 else '' }}
+-- Get source row count
+@plsql-util.sql READONLY count_rows {{ owner }} {{ table_name }} {{ current_state.row_count if current_state.row_count > 0 else '' }}
 
--- Verify target table is empty using generic validation
-@validation/count_table_rows.sql {{ owner }} {{ new_table_name }} 0
+-- Verify target table is empty
+@plsql-util.sql READONLY count_rows {{ owner }} {{ new_table_name }} 0
 
 -- Disable constraints on target (performance optimization)
-@validation/disable_constraints.sql {{ owner }} {{ new_table_name }}
+@plsql-util.sql WRITE disable_constraints {{ owner }} {{ new_table_name }}
 
 -- Enable parallel DML
 ALTER SESSION ENABLE PARALLEL DML;
@@ -109,18 +109,17 @@ PROMPT ✓ Data load completed and committed
 
 
 -- Post-data load validation and statistics
-@validation/post_data_load_checks.sql {{ owner }} {{ new_table_name }} {{ table_name }} {{ current_state.row_count }} {{ target_configuration.parallel_degree }}
+@plsql-util.sql WORKFLOW post_data_load {{ owner }} {{ new_table_name }} {{ table_name }} {{ current_state.row_count }} {{ target_configuration.parallel_degree }}
 
 {%- if target_configuration.partition_type in ['INTERVAL', 'RANGE'] %}
 
-
--- Partition distribution summary (generic)
-@validation/partition_distribution_summary.sql {{ owner }} {{ new_table_name }} {{ target_configuration.subpartition_type }}
+-- Partition distribution summary
+@plsql-util.sql READONLY check_partition_dist {{ owner }} {{ new_table_name }}
 
 {%- endif %}
 
 -- Re-enable constraints
-@validation/enable_constraints.sql {{ owner }} {{ new_table_name }}
+@plsql-util.sql WRITE enable_constraints {{ owner }} {{ new_table_name }}
 
 -- Final summary
 PROMPT

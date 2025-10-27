@@ -108,4 +108,24 @@ ALTER SESSION FORCE PARALLEL DDL PARALLEL :v_original_parallel_degree;
 -- Restore original parallel policy
 ALTER SESSION SET PARALLEL_DEGREE_POLICY = :v_original_parallel_policy;
 
+-- Validate index creation
+PROMPT
+PROMPT Validating index creation...
+DECLARE
+    v_index_count NUMBER;
+    v_expected_count NUMBER := {{ indexes | length if indexes else 0 }};
+BEGIN
+    SELECT COUNT(*) INTO v_index_count
+    FROM all_indexes
+    WHERE owner = '{{ owner }}'
+    AND (table_name = '{{ new_table_name }}_NEW' OR table_name = '{{ new_table_name }}');
+    
+    IF v_index_count >= v_expected_count THEN
+        DBMS_OUTPUT.PUT_LINE('✓ Validation passed: ' || v_index_count || ' index(es) found (expected: ' || v_expected_count || ')');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('⚠ Validation warning: ' || v_index_count || ' index(es) found (expected: ' || v_expected_count || ')');
+    END IF;
+END;
+/
+
 PROMPT ✓ Step 30 Complete: {{ indexes | length if indexes else 0 }} index(es) created

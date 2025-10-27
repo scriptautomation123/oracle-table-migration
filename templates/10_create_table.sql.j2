@@ -59,8 +59,8 @@ PROMPT LOB Columns: {{ current_state.lob_count }}
 {% endif %}
 PROMPT ================================================================
 
--- Check if table already exists (generic)
-@validation/check_table_exists.sql {{ owner }} {{ new_table_name }}
+-- Check if table already exists
+@plsql-util.sql READONLY check_existence {{ owner }} {{ new_table_name }}
 
 -- Create new table with partitioning
 PROMPT
@@ -132,7 +132,7 @@ PROMPT ✓ Table {{ owner }}.{{ new_table_name }} created successfully
 
 
 -- Post-create table checks (structure, partitioning, LOBs, stats)
-@validation/post_create_table_checks.sql {{ owner }} {{ new_table_name }} {{ target_configuration.parallel_degree }}
+@plsql-util.sql WORKFLOW post_create {{ owner }} {{ new_table_name }} {{ target_configuration.parallel_degree }}
 
 PROMPT
 PROMPT ================================================================
