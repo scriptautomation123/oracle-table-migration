@@ -173,3 +173,7 @@ Benefits:
 - `70_drop_old_table.sql` - Cleanup
 - `master1.sql` - Complete orchestrated script
 
+python3 src/generate.py --discover --schema GD \
+  --connection "nbk5k9e/***@ldap://ldap-hostname:389/cn=your-distinguished-name" \
+  --thin-ldap
+
