@@ -37,7 +37,7 @@ Context Variables:
 {%- else %}
 -- Current: Non-partitioned table
 {%- endif %}
--- Target Partitioning: {{ target_configuration.partition_type }}{% if target_configuration.subpartition_type == 'HASH' %}-{{ target_configuration.subpartition_type }}{% endif %}
+-- Target Partitioning: {{ target_configuration.partition_type }}{% if target_configuration.subpartition_type and target_configuration.subpartition_type.value == 'HASH' %}-{{ target_configuration.subpartition_type }}{% endif %}
 -- ==================================================================
 
 SET ECHO ON
@@ -49,10 +49,10 @@ PROMPT ================================================================
 PROMPT Step 10: Creating New Partitioned Table
 PROMPT ================================================================
 PROMPT Table: {{ owner }}.{{ new_table_name }}
-PROMPT Partitioning: {{ target_configuration.partition_type }}{% if target_configuration.partition_type == 'INTERVAL' %} ({{ target_configuration.interval_type }}){% endif %}
+PROMPT Partitioning: {{ target_configuration.partition_type }}{% if target_configuration.partition_type.value == 'INTERVAL' %} ({{ target_configuration.interval_type }}){% endif %}
 PROMPT Partition Column: {{ target_configuration.partition_column }}
-PROMPT Subpartitioning: {% if target_configuration.subpartition_type == 'HASH' %}HASH on {{ target_configuration.subpartition_column }}{% else %}NONE{% endif %}
-PROMPT Hash Subpartitions: {% if target_configuration.subpartition_type == 'HASH' %}{{ target_configuration.subpartition_count }}{% endif %}
+PROMPT Subpartitioning: {% if target_configuration.subpartition_type and target_configuration.subpartition_type.value == 'HASH' %}HASH on {{ target_configuration.subpartition_column }}{% else %}NONE{% endif %}
+PROMPT Hash Subpartitions: {% if target_configuration.subpartition_type and target_configuration.subpartition_type.value == 'HASH' %}{{ target_configuration.subpartition_count }}{% endif %}
 PROMPT Tablespace: {{ target_configuration.tablespace }}
 {% if current_state.lob_count > 0 %}
 PROMPT LOB Columns: {{ current_state.lob_count }}
@@ -91,17 +91,17 @@ STORAGE (
 )
 {%- endif %}
 
-{%- if target_configuration.partition_type == 'INTERVAL' or target_configuration.partition_type == 'RANGE' %}
+{%- if target_configuration.partition_type.value == 'INTERVAL' or target_configuration.partition_type.value == 'RANGE' %}
 -- Partition the main table data by date, and subpartition by hash
 PARTITION BY RANGE ({{ target_configuration.partition_column }})
-INTERVAL ({{ target_configuration.interval_type | format_interval(target_configuration.interval_value) }}) -- Create a new partition for each {{ target_configuration.interval_type.lower() }}
-{%- if target_configuration.subpartition_type == 'HASH' %}
+INTERVAL ({{ target_configuration.interval_type.value | format_interval(target_configuration.interval_value) }}) -- Create a new partition for each {{ target_configuration.interval_type.value.lower() }}
+{%- if target_configuration.subpartition_type and target_configuration.subpartition_type.value == 'HASH' %}
 SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }}) SUBPARTITIONS {{ target_configuration.subpartition_count }} -- Create {{ target_configuration.subpartition_count }} hash subpartitions per interval partition
 {%- endif %}
 (
     -- Define the initial, pre-interval partition
     PARTITION p_before_{{ target_configuration.initial_partition_value | replace("TO_DATE('", "") | replace("', 'YYYY-MM-DD')", "") | replace("-", "_") }} VALUES LESS THAN ({{ target_configuration.initial_partition_value }})
-    {%- if target_configuration.subpartition_type == 'HASH' and lob_storage and lob_storage | length > 0 %}
+    {%- if target_configuration.subpartition_type and target_configuration.subpartition_type.value == 'HASH' and lob_storage and lob_storage | length > 0 %}
     (
         {%- set lob_tablespaces = target_configuration.lob_tablespaces if target_configuration.lob_tablespaces else [] %}
         {%- for i in range(target_configuration.subpartition_count) %}
@@ -113,7 +113,7 @@ SUBPARTITION BY HASH ({{ target_configuration.subpartition_column }}) SUBPARTITI
     )
     {%- endif %}
 )
-{%- if target_configuration.subpartition_type == 'HASH' and lob_storage and lob_storage | length > 0 %}
+{%- if target_configuration.subpartition_type and target_configuration.subpartition_type.value == 'HASH' and lob_storage and lob_storage | length > 0 %}
 -- Subpartition template for all future interval partitions
 SUBPARTITION TEMPLATE (
     {%- set lob_tablespaces = target_configuration.lob_tablespaces if target_configuration.lob_tablespaces else [] %}
@@ -140,8 +140,8 @@ PROMPT Step 10 Complete: Table Structure Created
 PROMPT ================================================================
 PROMPT Status: SUCCESS
 PROMPT Table: {{ owner }}.{{ new_table_name }}
-{%- if target_configuration.partition_type == 'INTERVAL' %}
-PROMPT Partitioning: INTERVAL-{% if target_configuration.subpartition_type == 'HASH' %}HASH{% else %}ONLY{% endif %}
+{%- if target_configuration.partition_type.value == 'INTERVAL' %}
+PROMPT Partitioning: INTERVAL-{% if target_configuration.subpartition_type and target_configuration.subpartition_type.value == 'HASH' %}HASH{% else %}ONLY{% endif %}
 {%- endif %}
 PROMPT
 PROMPT Next Steps:

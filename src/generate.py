@@ -67,6 +67,7 @@ class Constants:
         "10_create_table.sql.j2",
         "20_data_load.sql.j2",
         "30_create_indexes.sql.j2",
+        "35_gather_statistics.sql.j2",
         "40_delta_load.sql.j2",
         "50_swap_tables.sql.j2",
         "60_restore_grants.sql.j2",
@@ -428,7 +429,10 @@ class DiscoveryCommand(MigrationCommand):
                 config = discovery.discover_schema(
                     self.schema, self.include_patterns, self.exclude_patterns
                 )
-                discovery.save_config(config, self.output_file)
+                # Use timestamped output directory
+                saved_config_file = discovery.save_config(config, self.output_file, base_output_dir=self.config.output_dir)
+                if saved_config_file:
+                    self.output_file = saved_config_file
                 self._print_next_steps()
                 return True
         except Exception as e:
@@ -520,10 +524,25 @@ class GenerationCommand(MigrationCommand):
         self, migration_config: MigrationConfig, template_service: TemplateService
     ) -> bool:
         """Generate migration scripts"""
-        # Create output directory
-        output_dir = Path(self.config.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Output directory: {output_dir}")
+        # Detect if config is in a timestamped directory
+        config_file = Path(self.config.config_file) if self.config.config_file else None
+        if config_file and config_file.exists():
+            # Check if parent is a timestamped directory (e.g., 20251027_143022_app_data_owner)
+            parent = config_file.parent
+            if parent.name.startswith("202") and parent.name.count("_") >= 2:
+                # Use the timestamped directory
+                output_dir = parent
+                print(f"Using timestamped output directory: {output_dir}")
+            else:
+                # Use default output directory
+                output_dir = Path(self.config.output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                print(f"Output directory: {output_dir}")
+        else:
+            # Default behavior
+            output_dir = Path(self.config.output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Output directory: {output_dir}")
 
         # Process each table
         enabled_tables = [t for t in migration_config.tables if t.enabled]
@@ -686,6 +705,53 @@ class MigrationScriptGenerator:
             return False
 
 
+def run_discovery(
+    schema: str, connection: str, output_dir: Optional[Path] = None
+) -> str:
+    """Discovery helper function for runner.py"""
+    from lib.discovery_queries import TableDiscovery
+
+    database_service = DatabaseService(connection, thin_ldap=False)
+    with database_service.connection() as conn:
+        discovery = TableDiscovery(
+            conn, environment="global", connection_string=connection
+        )
+        config = discovery.discover_schema(schema, None, None)
+        output_base = output_dir if output_dir else Path("output")
+        return discovery.save_config(config, "migration_config.json", base_output_dir=str(output_base))
+
+
+def run_generation(config_file: Path, output_dir: Optional[Path] = None) -> bool:
+    """Generation helper function for runner.py"""
+    # Create a mock ApplicationConfig for generation
+    class MockArgs:
+        def __init__(self, config_file):
+            self.connection = None
+            self.config = str(config_file)
+            self.template_dir = "templates"
+            self.output_dir = str(output_dir) if output_dir else "output"
+            self.environment = None
+            self.thin_ldap = False
+            self.validate_only = False
+            self.check_database = False
+            self.discover = False
+
+    mock_args = MockArgs(config_file)
+    command = create_command(mock_args)
+
+    # Create generator config
+    generator_config = ApplicationConfig(
+        connection_string=None,
+        config_file=str(config_file),
+        template_dir=mock_args.template_dir,
+        output_dir=mock_args.output_dir,
+        environment=None,
+        thin_ldap=False,
+    )
+    generator = MigrationScriptGenerator(generator_config)
+    return generator.run(command)
+
+
 def create_command(args: argparse.Namespace) -> MigrationCommand:
     """Factory function to create appropriate command"""
     config = ApplicationConfig(
@@ -775,7 +841,16 @@ def main() -> None:
 
     # Create and run command
     command = create_command(args)
-    generator = MigrationScriptGenerator(ApplicationConfig())
+    # Create config for the generator (command already has its own config)
+    generator_config = ApplicationConfig(
+        connection_string=args.connection,
+        config_file=args.config,
+        template_dir=args.template_dir,
+        output_dir=args.output_dir,
+        environment=args.environment,
+        thin_ldap=args.thin_ldap,
+    )
+    generator = MigrationScriptGenerator(generator_config)
     success = generator.run(command)
 
     sys.exit(0 if success else 1)

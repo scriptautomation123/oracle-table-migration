@@ -203,6 +203,60 @@ execute_migration() {
 	fi
 }
 
+# Execute workflow operations
+execute_workflow() {
+	OPERATION="${1}"
+	shift
+	ARGS="$*"
+
+	find_sql_client
+	create_output_dir
+
+	SQL_SCRIPT="${SCRIPT_DIR}/plsql-util.sql"
+
+	echo -e "${BLUE}============================================================${NC}" | tee "${LOG_FILE}"
+	echo -e "${BLUE}WORKFLOW OPERATIONS${NC}" | tee -a "${LOG_FILE}"
+	echo -e "${BLUE}============================================================${NC}" | tee -a "${LOG_FILE}"
+	echo "Operation: ${OPERATION}" | tee -a "${LOG_FILE}"
+	echo "Script: ${SQL_SCRIPT}" | tee -a "${LOG_FILE}"
+	echo "Connection: ${CONNECTION}" | tee -a "${LOG_FILE}"
+	echo "Output: ${OUTPUT_DIR}" | tee -a "${LOG_FILE}"
+	echo "" | tee -a "${LOG_FILE}"
+
+	# Build command
+	if [ "${SQL_CLIENT}" = "sqlcl" ]; then
+		CMD="echo '@${SQL_SCRIPT} WORKFLOW ${OPERATION} ${ARGS}' | sqlcl '${CONNECTION}'"
+	else
+		CMD="echo '@${SQL_SCRIPT} WORKFLOW ${OPERATION} ${ARGS}' | sqlplus -S '${CONNECTION}'"
+	fi
+
+	echo "Executing workflow operation..." | tee -a "${LOG_FILE}"
+
+	START_TIME=$(date +%s)
+
+	if eval "${CMD}" >"${OUTPUT_DIR}/workflow.log" 2>&1; then
+		END_TIME=$(date +%s)
+		DURATION=$((END_TIME - START_TIME))
+
+		echo -e "${GREEN}✓ Workflow completed (${DURATION}s)${NC}" | tee -a "${LOG_FILE}"
+
+		if grep -q "RESULT: PASSED" "${OUTPUT_DIR}/workflow.log"; then
+			echo -e "${GREEN}✓ Result: PASSED${NC}"
+			exit 0
+		elif grep -q "RESULT: FAILED" "${OUTPUT_DIR}/workflow.log"; then
+			echo -e "${RED}✗ Result: FAILED${NC}"
+			exit 1
+		else
+			echo -e "${YELLOW}? Result: UNKNOWN${NC}"
+			exit 2
+		fi
+	else
+		echo -e "${RED}✗ Workflow failed${NC}" | tee -a "${LOG_FILE}"
+		echo "See: ${OUTPUT_DIR}/workflow.log" | tee -a "${LOG_FILE}"
+		exit 1
+	fi
+}
+
 # Main
 detect_os
 
@@ -223,15 +277,52 @@ migration)
 	CONNECTION="${4}"
 	execute_migration "${MODE}" "${OWNER}" "${TABLE}" "${CONNECTION}"
 	;;
+orchestrate)
+	# TODO: Implement complete orchestration workflow here
+	echo -e "${RED}ERROR: Orchestrate mode not yet implemented${NC}"
+	echo "Use individual operations instead:"
+	echo "  validate check_existence"
+	echo "  workflow post_create"
+	echo "  workflow post_data_load"
+	echo "  workflow create_renamed_view"
+	echo "  migrate finalize"
+	exit 1
+	;;
+finalize)
+	OWNER="${1}"
+	TABLE="${2}"
+	CONNECTION="${3}"
+	execute_workflow "FINALIZE_SWAP" "${OWNER} ${TABLE}"
+	;;
+add_subparts)
+	OWNER="${1}"
+	TABLE="${2}"
+	SUBPART_COL="${3}"
+	SUBPART_COUNT="${4}"
+	CONNECTION="${5}"
+	execute_workflow "ADD_HASH_SUBPARTITIONS" "${OWNER} ${TABLE} ${SUBPART_COL} ${SUBPART_COUNT}"
+	;;
+workflow)
+	CONNECTION="${1}"
+	OPERATION="${2}"
+	shift 2 || true
+	execute_workflow "${OPERATION}" "$@"
+	;;
 *)
 	echo "Usage: $0 <type> [args...]"
-	echo "  type: validation | migration"
+	echo "  type: validation | migration | orchestrate | finalize | add_subparts | workflow"
 	echo ""
 	echo "For validation:"
 	echo "  $0 validation <connection> <operation> [args...]"
 	echo ""
 	echo "For migration:"
 	echo "  $0 migration <mode> <owner> <table> <connection>"
+	echo ""
+	echo "For orchestration:"
+	echo "  $0 orchestrate <owner> <table> <connection>"
+	echo ""
+	echo "For workflow:"
+	echo "  $0 workflow <connection> <operation> [args...]"
 	exit 1
 	;;
 esac

@@ -142,8 +142,163 @@ def cmd_generate(args):
         return 1
 
     output_dir = Path(args.output_dir) if args.output_dir else None
-    run_generation(config_file, output_dir)
+    return 0 if run_generation(config_file, output_dir) else 1
+
+
+def wait_for_user():
+    """Wait for user to press Enter to continue"""
+    try:
+        input("\n" + "=" * 70 + "\nPress Enter to continue... ")
+    except KeyboardInterrupt:
+        print("\n\nWorkflow cancelled by user")
+        sys.exit(130)
+
+
+def cmd_workflow(args):
+    """Complete E2E workflow: discover -> generate -> validate -> execute"""
+    from src.generate import run_discovery, run_generation
+    
+    if not args.schema:
+        print("ERROR: Schema required for workflow (--schema)")
+        return 1
+    
+    if not args.connection:
+        print("ERROR: Connection required for workflow (--connection)")
+        return 1
+    
+    # Check if --no-pause flag exists (default: pause enabled)
+    pause_enabled = not getattr(args, "no_pause", False)
+    
+    print("=" * 70)
+    print("E2E WORKFLOW: Step 1 of 2 - Discovering schema...")
+    print("=" * 70)
+    
+    # Step 1: Discovery
+    output_dir = Path(args.output_dir) if args.output_dir else Path("output")
+    config_file = run_discovery(args.schema, args.connection, output_dir)
+    
+    if not config_file:
+        print("ERROR: Discovery failed")
+        return 1
+    
+    print("\n✓ Discovery complete!")
+    print(f"✓ Configuration saved to: {config_file}")
+    print(f"✓ Output directory: {output_dir}")
+    
+    if pause_enabled:
+        print("\n📋 Review the discovery results above before proceeding.")
+        wait_for_user()
+    
+    print("\n" + "=" * 70)
+    print("E2E WORKFLOW: Step 2 of 2 - Generating DDL scripts...")
+    print("=" * 70)
+    
+    # Step 2: Generation
+    success = run_generation(Path(config_file), output_dir)
+    
+    if not success:
+        print("ERROR: Generation failed")
+        return 1
+
+    print("\n✓ DDL generation complete!")
+
+    # Show summary
+    timestamped_dirs = list(output_dir.glob("202*"))
+    if timestamped_dirs:
+        latest_output = sorted(timestamped_dirs)[-1]
+        table_dirs = list(latest_output.glob("APP_*"))
+        print(f"✓ Generated DDL for {len(table_dirs)} tables")
+        print(f"✓ Output location: {latest_output}")
+
+    if pause_enabled:
+        print("\n📋 Review the generated DDL scripts above before proceeding.")
+        wait_for_user()
+
+    print("\n" + "=" * 70)
+    print("E2E WORKFLOW: COMPLETE!")
+    print("=" * 70)
+    print(f"Config: {config_file}")
+    print(f"Output: {output_dir}")
+    print("\n📝 Next steps:")
+    print("  1. Load test data: sqlcl user/pass@db @templates/test/comprehensive_oracle_ddl.sql")
+    print("  2. Execute migration: sqlcl user/pass@db @output/202*/APP_DATA_OWNER_TABLE/master1.sql")
+    print("  3. Or use: python3 src/runner.py deploy --script <path> --connection <conn>")
+    print("=" * 70)
+
     return 0
+
+
+def cmd_deploy(args):
+    """Deploy generated DDL to database"""
+    if not args.connection:
+        print("ERROR: Connection required (--connection)")
+        return 1
+
+    if not args.script:
+        print("ERROR: Script file required (--script)")
+        return 1
+
+    script_path = Path(args.script)
+    if not script_path.exists():
+        print(f"ERROR: Script file not found: {script_path}")
+        return 1
+
+    from src.lib.sql_executor import SQLExecutor
+
+    thin_ldap = getattr(args, "thin_ldap", False)
+    executor = SQLExecutor(
+        explicit_client=args.sql_client, thin_ldap=thin_ldap, verbose=args.verbose
+    )
+
+    print(f"Executing: {script_path}")
+    print(f"Connection: {args.connection}")
+
+    # Execute the script
+    result = executor.execute_script(str(script_path), args.connection)
+
+    if result.success:
+        print("✓ Deployment successful")
+        return 0
+    else:
+        print(f"✗ Deployment failed: {result.message}")
+        return 1
+
+
+def cmd_setup(args):
+    """Setup test environment by running comprehensive DDL script"""
+    if not args.connection:
+        print("ERROR: Connection required (--connection)")
+        return 1
+
+    ddl_script = Path("templates/test/comprehensive_oracle_ddl.sql")
+    if not ddl_script.exists():
+        print(f"ERROR: DDL script not found: {ddl_script}")
+        return 1
+
+    from src.lib.sql_executor import SQLExecutor
+
+    thin_ldap = getattr(args, "thin_ldap", False)
+    executor = SQLExecutor(
+        explicit_client=args.sql_client, thin_ldap=thin_ldap, verbose=args.verbose
+    )
+
+    print("=" * 70)
+    print("SETUP: Creating test environment...")
+    print("=" * 70)
+    print(f"Script: {ddl_script}")
+    print(f"Connection: {args.connection}")
+
+    # Execute the script
+    result = executor.execute_script(str(ddl_script), args.connection)
+
+    if result.success:
+        print("\n✓ Setup complete! Test environment created successfully.")
+        print("\nNext steps:")
+        print("  python3 src/runner.py workflow --schema APP_DATA_OWNER --connection <conn>")
+        return 0
+    else:
+        print(f"\n✗ Setup failed: {result.message}")
+        return 1
 
 
 def main():
@@ -153,17 +308,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Full E2E test
-  python3 src/runner.py test --connection "$ORACLE_CONN" --schema APP_DATA_OWNER
+  # Complete E2E workflow (discover + generate with interactive pauses)
+  python3 src/runner.py workflow --schema APP_DATA_OWNER --connection "$ORACLE_CONN"
 
-  # Validate table exists
+  # Deploy generated DDL to database
+  python3 src/runner.py deploy --script output/202*/APP_DATA_OWNER_TABLE/master1.sql --connection "$ORACLE_CONN"
+
+  # Individual steps
+  python3 src/runner.py discover --schema APP_DATA_OWNER --connection "$ORACLE_CONN"
+  python3 src/runner.py generate --config output/202*/migration_config.json
   python3 src/runner.py validate check_existence APP_OWNER MY_TABLE --connection "$ORACLE_CONN"
 
-  # Discover schema
-  python3 src/runner.py discover --schema APP_DATA_OWNER --connection "$ORACLE_CONN"
-
-  # Generate DDL
-  python3 src/runner.py generate --config path/to/config.json
+  # Full E2E test
+  python3 src/runner.py test --connection "$ORACLE_CONN" --schema APP_DATA_OWNER
         """,
     )
 
@@ -251,6 +408,54 @@ Examples:
     parser_generate.add_argument(
         "--output-dir", help="Output directory for generated DDL"
     )
+    
+    # workflow subcommand
+    parser_workflow = subparsers.add_parser("workflow", help="E2E workflow: discover -> generate")
+    parser_workflow.add_argument(
+        "--schema", required=True, help="Schema name to discover"
+    )
+    parser_workflow.add_argument(
+        "--connection", required=True, help="Oracle connection string"
+    )
+    parser_workflow.add_argument(
+        "--output-dir", help="Output directory for results"
+    )
+    parser_workflow.add_argument(
+        "--no-pause", action="store_true", help="Skip interactive pauses between steps (default: pauses enabled)"
+    )
+    
+    # deploy subcommand
+    parser_deploy = subparsers.add_parser("deploy", help="Deploy DDL to database")
+    parser_deploy.add_argument(
+        "--script", required=True, help="Path to SQL script to execute"
+    )
+    parser_deploy.add_argument(
+        "--connection", required=True, help="Oracle connection string"
+    )
+    parser_deploy.add_argument(
+        "--sql-client", choices=["sqlcl", "sqlplus"], help="Force specific SQL client"
+    )
+    parser_deploy.add_argument(
+        "--thin-ldap", action="store_true", help="Enable thin client LDAP mode"
+    )
+    parser_deploy.add_argument(
+        "--verbose", action="store_true", help="Enable verbose output"
+    )
+
+    # setup subcommand
+    parser_setup = subparsers.add_parser("setup", help="Setup test environment")
+    parser_setup.add_argument(
+        "--connection", required=True, help="Oracle connection string"
+    )
+    parser_setup.add_argument(
+        "--sql-client", choices=["sqlcl", "sqlplus"], help="Force specific SQL client"
+    )
+    parser_setup.add_argument(
+        "--thin-ldap", action="store_true", help="Enable thin client LDAP mode"
+    )
+    parser_setup.add_argument(
+        "--verbose", action="store_true", help="Enable verbose output"
+    )
 
     args = parser.parse_args()
 
@@ -265,6 +470,9 @@ Examples:
             "migrate": cmd_migrate,
             "discover": cmd_discover,
             "generate": cmd_generate,
+            "workflow": cmd_workflow,
+            "deploy": cmd_deploy,
+            "setup": cmd_setup,
         }
 
         return command_map[args.command](args)
@@ -274,7 +482,7 @@ Examples:
         return 130
     except Exception as e:
         print(f"\n❌ Fatal error: {e}")
-        if args.verbose:
+        if getattr(args, "verbose", False):
             import traceback
 
             traceback.print_exc()

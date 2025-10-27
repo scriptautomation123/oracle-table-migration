@@ -48,6 +48,18 @@ ${GREEN}COMMANDS:${NC}
       • generate - Create DDL files
       • execute - Execute DDL files
       • auto - Generate and execute
+      • orchestrate - Complete end-to-end migration
+      • finalize - Finalize swap (drop old, rename, validate)
+      • add_subparts - Add hash subpartitions online
+
+  ${YELLOW}workflow <operation> [args]${NC}
+    Run workflow operations
+    
+    Operations:
+      • create_renamed_view <owner> <table> - Create view with INSTEAD OF trigger
+      • finalize_swap <owner> <table> - Complete swap operation
+      • add_hash_subpartitions <owner> <table> <col> [count] - Add online subpartitions
+      • pre_create_partitions <owner> <table> [days] - Pre-create future partitions
 
 ${GREEN}OPTIONS:${NC}
     --connection, -c <conn>     Oracle connection
@@ -62,11 +74,17 @@ ${GREEN}EXAMPLES:${NC}
   ${CYAN}# Check row count${NC}
   $0 validate count_rows APP_OWNER MY_TABLE 1000000 -c "\$ORACLE_CONN"
 
-  ${CYAN}# Generate migration DDL${NC}
-  $0 migrate generate APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
+  ${CYAN}# Complete migration${NC}
+  $0 migrate orchestrate APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
 
-  ${CYAN}# Execute migration${NC}
-  $0 migrate execute APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
+  ${CYAN}# Create view with INSTEAD OF trigger${NC}
+  $0 workflow create_renamed_view APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
+
+  ${CYAN}# Add hash subpartitions${NC}
+  $0 workflow add_hash_subpartitions APP_OWNER MY_TABLE USER_ID 8 -c "\$ORACLE_CONN"
+
+  ${CYAN}# Pre-create partitions 2 days ahead${NC}
+  $0 workflow pre_create_partitions APP_OWNER MY_TABLE 2 -c "\$ORACLE_CONN"
 
 EOF
 }
@@ -147,12 +165,51 @@ migrate | m)
 		exit 1
 	fi
 
-	${RUNNER} migration "${MODE}" "${OWNER}" "${TABLE}" "${CONNECTION}"
+	# Check for orchestration modes
+	if [ "${MODE}" = "orchestrate" ]; then
+		${RUNNER} orchestrate "${OWNER}" "${TABLE}" "${CONNECTION}"
+	elif [ "${MODE}" = "finalize" ]; then
+		${RUNNER} finalize "${OWNER}" "${TABLE}" "${CONNECTION}"
+	elif [ "${MODE}" = "add_subparts" ]; then
+		SUBPART_COL="${4}"
+		SUBPART_COUNT="${5:-8}"
+		${RUNNER} add_subparts "${OWNER}" "${TABLE}" "${SUBPART_COL}" "${SUBPART_COUNT}" "${CONNECTION}"
+	else
+		${RUNNER} migration "${MODE}" "${OWNER}" "${TABLE}" "${CONNECTION}"
+	fi
+	;;
+
+workflow | w)
+	TYPE="workflow"
+	OPERATION="$1"
+	shift
+
+	# Parse remaining args
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-c | --connection)
+			CONNECTION="$2"
+			shift 2
+			;;
+		*)
+			ARGS="${ARGS} $1"
+			shift
+			;;
+		esac
+	done
+
+	if [ -z "${CONNECTION}" ]; then
+		echo -e "${RED}ERROR: Connection string required${NC}"
+		echo "Use -c or set ORACLE_CONN"
+		exit 1
+	fi
+
+	${RUNNER} workflow "${CONNECTION}" "${OPERATION}" "${ARGS}"
 	;;
 
 *)
 	echo -e "${RED}ERROR: Unknown command: ${COMMAND}${NC}"
-	echo "Valid commands: validate, migrate"
+	echo "Valid commands: validate, migrate, workflow"
 	exit 1
 	;;
 esac

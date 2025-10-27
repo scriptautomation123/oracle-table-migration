@@ -685,15 +685,38 @@ PROMPT ✓ All data loaded successfully
 PROMPT ========================================
 
 -- ==========================================
--- STEP 5: GATHER STATISTICS
+-- STEP 5: GATHER STATISTICS (TABLE-LEVEL)
 -- ==========================================
 PROMPT
-PROMPT Step 5: Gathering statistics...
+PROMPT Step 5: Gathering table-level statistics...
 PROMPT ========================================
 
+DECLARE
+    sql_stmt VARCHAR2(4000);
+    tbl_count NUMBER := 0;
 BEGIN
-    DBMS_STATS.GATHER_SCHEMA_STATS('&owner_schema');
-    DBMS_OUTPUT.PUT_LINE('✓ Schema statistics gathered for &owner_schema');
+    -- Gather stats for each table individually
+    FOR tbl IN (SELECT table_name FROM user_tables ORDER BY table_name) LOOP
+        BEGIN
+            sql_stmt := 'BEGIN DBMS_STATS.GATHER_TABLE_STATS(
+                ownname => USER,
+                tabname => ''' || tbl.table_name || ''',
+                estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+                method_opt => ''FOR ALL COLUMNS SIZE AUTO'',
+                degree => 1,
+                cascade => TRUE
+            ); END;';
+            
+            EXECUTE IMMEDIATE sql_stmt;
+            DBMS_OUTPUT.PUT_LINE('✓ Gathered statistics for ' || tbl.table_name);
+            tbl_count := tbl_count + 1;
+        EXCEPTION
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('⚠ Error gathering stats for ' || tbl.table_name || ': ' || SQLERRM);
+        END;
+    END LOOP;
+    
+    DBMS_OUTPUT.PUT_LINE('✓ Statistics gathering complete for ' || tbl_count || ' tables');
 END;
 /
 

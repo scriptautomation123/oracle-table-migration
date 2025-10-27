@@ -1,4 +1,4 @@
--- ==================================================================
+ hou-- ==================================================================
 -- PL/SQL UTILITY SCRIPT - Consolidated Oracle Table Migration Tools
 -- ==================================================================
 -- Usage: @plsql-util.sql <category> <operation> <args...>
@@ -456,9 +456,423 @@ BEGIN
                         END IF;
                     END;
                     
+                WHEN 'CREATE_RENAMED_VIEW' THEN
+                    -- Creates view with join between old and new tables, with INSTEAD OF trigger for DML
+                    DECLARE
+                        v_schema VARCHAR2(128) := UPPER('&arg3');
+                        v_table VARCHAR2(128) := UPPER('&arg4');
+                        v_new_table VARCHAR2(128) := v_table || '_NEW';
+                        v_old_table VARCHAR2(128) := v_table || '_OLD';
+                        v_view_name VARCHAR2(128) := v_table || '_JOINED';
+                        v_trigger_name VARCHAR2(128) := 'TG_' || v_view_name || '_IOT';
+                    BEGIN
+                        DBMS_OUTPUT.PUT_LINE('Creating renamed view with INSTEAD OF trigger...');
+                        DBMS_OUTPUT.PUT_LINE('  Schema: ' || v_schema);
+                        DBMS_OUTPUT.PUT_LINE('  Table: ' || v_table);
+                        DBMS_OUTPUT.PUT_LINE('  New table: ' || v_new_table);
+                        DBMS_OUTPUT.PUT_LINE('  Old table: ' || v_old_table);
+                        DBMS_OUTPUT.PUT_LINE('  View: ' || v_view_name);
+                        
+                        -- Check tables exist
+                        SELECT COUNT(*) INTO v_count FROM all_tables
+                        WHERE owner = v_schema AND table_name = v_new_table;
+                        IF v_count = 0 THEN
+                            DBMS_OUTPUT.PUT_LINE('  FAILED: New table does not exist');
+                            v_result := FALSE;
+                        ELSE
+                            DBMS_OUTPUT.PUT_LINE('  ✓ New table exists');
+                        END IF;
+                        
+                        SELECT COUNT(*) INTO v_count FROM all_tables
+                        WHERE owner = v_schema AND table_name = v_old_table;
+                        IF v_count = 0 THEN
+                            DBMS_OUTPUT.PUT_LINE('  FAILED: Old table does not exist');
+                            v_result := FALSE;
+                        ELSE
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Old table exists');
+                        END IF;
+                        
+                        IF NOT v_result THEN
+                            DBMS_OUTPUT.PUT_LINE('RESULT: FAILED - Prerequisites not met');
+                            RETURN;
+                        END IF;
+                        
+                        -- Get all columns from NEW table for view definition
+                        DECLARE
+                            v_cols CLOB := '';
+                            v_first BOOLEAN := TRUE;
+                        BEGIN
+                            FOR col IN (
+                                SELECT column_name, data_type, column_id
+                                FROM all_tab_columns
+                                WHERE owner = v_schema AND table_name = v_new_table
+                                ORDER BY column_id
+                            ) LOOP
+                                IF v_first THEN
+                                    v_cols := v_cols || col.column_name;
+                                    v_first := FALSE;
+                                ELSE
+                                    v_cols := v_cols || ', ' || col.column_name;
+                                END IF;
+                            END LOOP;
+                            
+                            -- Drop view if exists
+                            BEGIN
+                                EXECUTE IMMEDIATE 'DROP VIEW ' || v_schema || '.' || v_view_name;
+                                DBMS_OUTPUT.PUT_LINE('  ✓ Dropped existing view');
+                            EXCEPTION WHEN OTHERS THEN NULL;
+                            END;
+                            
+                            -- Create view with FULL OUTER JOIN to show both tables
+                            EXECUTE IMMEDIATE 'CREATE OR REPLACE VIEW ' || v_schema || '.' || v_view_name || ' AS
+                                SELECT * FROM ' || v_schema || '.' || v_new_table || ' UNION ALL
+                                SELECT ' || REPLACE(v_cols, v_new_table || '.', '') || ' FROM ' || v_schema || '.' || v_old_table || '
+                                WHERE NOT EXISTS (SELECT 1 FROM ' || v_schema || '.' || v_new_table || ' WHERE ' || 
+                                SUBSTR(v_cols, 1, INSTR(v_cols, ',') - 1) || ' = ' || v_old_table || '.' || 
+                                SUBSTR(v_cols, 1, INSTR(v_cols, ',') - 1) || ')';
+                            
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Created view ' || v_view_name);
+                        END;
+                        
+                        -- Drop trigger if exists
+                        BEGIN
+                            EXECUTE IMMEDIATE 'DROP TRIGGER ' || v_schema || '.' || v_trigger_name;
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Dropped existing trigger');
+                        EXCEPTION WHEN OTHERS THEN NULL;
+                        END;
+                        
+                        -- Create INSTEAD OF trigger (INSERT only to NEW table)
+                        EXECUTE IMMEDIATE 'CREATE OR REPLACE TRIGGER ' || v_schema || '.' || v_trigger_name || '
+                            INSTEAD OF INSERT ON ' || v_schema || '.' || v_view_name || '
+                            FOR EACH ROW
+                            BEGIN
+                                INSERT INTO ' || v_schema || '.' || v_new_table || ' VALUES :NEW.*;
+                            END;';
+                        
+                        DBMS_OUTPUT.PUT_LINE('  ✓ Created INSTEAD OF trigger ' || v_trigger_name);
+                        DBMS_OUTPUT.PUT_LINE('RESULT: PASSED - View and trigger created successfully');
+                    END;
+                    
+                WHEN 'FINALIZE_SWAP' THEN
+                    -- Complete the swap: drop old, rename new, drop view/trigger, validate
+                    DECLARE
+                        v_schema VARCHAR2(128) := UPPER('&arg3');
+                        v_table VARCHAR2(128) := UPPER('&arg4');
+                        v_new_table VARCHAR2(128) := v_table || '_NEW';
+                        v_old_table VARCHAR2(128) := v_table || '_OLD';
+                        v_view_name VARCHAR2(128) := v_table || '_JOINED';
+                        v_trigger_name VARCHAR2(128) := 'TG_' || v_view_name || '_IOT';
+                    BEGIN
+                        DBMS_OUTPUT.PUT_LINE('Finalizing swap operation...');
+                        DBMS_OUTPUT.PUT_LINE('  Schema: ' || v_schema);
+                        DBMS_OUTPUT.PUT_LINE('  Table: ' || v_table);
+                        
+                        -- Step 1: Drop INSTEAD OF trigger
+                        BEGIN
+                            EXECUTE IMMEDIATE 'DROP TRIGGER ' || v_schema || '.' || v_trigger_name;
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Dropped trigger');
+                        EXCEPTION WHEN OTHERS THEN
+                            DBMS_OUTPUT.PUT_LINE('  ✗ Failed to drop trigger: ' || SQLERRM);
+                            v_result := FALSE;
+                        END;
+                        
+                        -- Step 2: Drop view
+                        BEGIN
+                            EXECUTE IMMEDIATE 'DROP VIEW ' || v_schema || '.' || v_view_name;
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Dropped view');
+                        EXCEPTION WHEN OTHERS THEN
+                            DBMS_OUTPUT.PUT_LINE('  ✗ Failed to drop view: ' || SQLERRM);
+                            v_result := FALSE;
+                        END;
+                        
+                        -- Step 3: Drop old table
+                        BEGIN
+                            EXECUTE IMMEDIATE 'DROP TABLE ' || v_schema || '.' || v_old_table || ' PURGE';
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Dropped old table');
+                        EXCEPTION WHEN OTHERS THEN
+                            DBMS_OUTPUT.PUT_LINE('  ✗ Failed to drop old table: ' || SQLERRM);
+                            v_result := FALSE;
+                        END;
+                        
+                        -- Step 4: Rename new table to original name
+                        BEGIN
+                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_new_table || ' RENAME TO ' || v_table;
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Renamed ' || v_new_table || ' to ' || v_table);
+                        EXCEPTION WHEN OTHERS THEN
+                            DBMS_OUTPUT.PUT_LINE('  ✗ Failed to rename table: ' || SQLERRM);
+                            v_result := FALSE;
+                        END;
+                        
+                        -- Step 5: Validate objects - check for invalid objects
+                        DECLARE
+                            v_invalid_count NUMBER;
+                        BEGIN
+                            SELECT COUNT(*) INTO v_invalid_count
+                            FROM all_objects
+                            WHERE owner = v_schema AND status = 'INVALID';
+                            
+                            IF v_invalid_count > 0 THEN
+                                DBMS_OUTPUT.PUT_LINE('  ⚠ Found ' || v_invalid_count || ' invalid object(s):');
+                                
+                                FOR obj IN (
+                                    SELECT object_name, object_type, status
+                                    FROM all_objects
+                                    WHERE owner = v_schema AND status = 'INVALID'
+                                    ORDER BY object_type, object_name
+                                ) LOOP
+                                    DBMS_OUTPUT.PUT_LINE('    - ' || obj.object_name || ' (' || obj.object_type || ')');
+                                    
+                                    -- Attempt to recompile
+                                    BEGIN
+                                        IF obj.object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE', 'PACKAGE BODY', 'TRIGGER') THEN
+                                            EXECUTE IMMEDIATE 'ALTER ' || obj.object_type || ' ' || v_schema || '.' || 
+                                                           obj.object_name || ' COMPILE';
+                                            DBMS_OUTPUT.PUT_LINE('      ✓ Recompiled successfully');
+                                        END IF;
+                                    EXCEPTION WHEN OTHERS THEN
+                                        DBMS_OUTPUT.PUT_LINE('      ✗ Recompile failed: ' || SQLERRM);
+                                    END;
+                                END LOOP;
+                                
+                                -- Check again after recompilation
+                                SELECT COUNT(*) INTO v_invalid_count
+                                FROM all_objects
+                                WHERE owner = v_schema AND status = 'INVALID';
+                                
+                                IF v_invalid_count = 0 THEN
+                                    DBMS_OUTPUT.PUT_LINE('  ✓ All objects recompiled successfully');
+                                ELSE
+                                    DBMS_OUTPUT.PUT_LINE('  ✗ ' || v_invalid_count || ' objects still invalid');
+                                END IF;
+                            ELSE
+                                DBMS_OUTPUT.PUT_LINE('  ✓ No invalid objects found');
+                            END IF;
+                        END;
+                        
+                        IF v_result THEN
+                            DBMS_OUTPUT.PUT_LINE('RESULT: PASSED - Finalization complete');
+                        ELSE
+                            DBMS_OUTPUT.PUT_LINE('RESULT: FAILED - Finalization had errors');
+                        END IF;
+                    END;
+                    
+                WHEN 'PRE_CREATE_PARTITIONS' THEN
+                    -- Pre-create future interval partitions
+                    DECLARE
+                        v_schema VARCHAR2(128) := UPPER('&arg3');
+                        v_table VARCHAR2(128) := UPPER('&arg4');
+                        v_days_ahead NUMBER := TO_NUMBER(NVL('&arg5', '2')); -- days to pre-create
+                        v_partition_count NUMBER := 0;
+                        v_interval_unit VARCHAR2(10);
+                        v_partition_type VARCHAR2(10);
+                        v_max_partition_date DATE;
+                        v_next_partition_date DATE;
+                        v_current_date DATE := TRUNC(SYSDATE);
+                    BEGIN
+                        DBMS_OUTPUT.PUT_LINE('Pre-creating interval partitions...');
+                        DBMS_OUTPUT.PUT_LINE('  Schema: ' || v_schema);
+                        DBMS_OUTPUT.PUT_LINE('  Table: ' || v_table);
+                        DBMS_OUTPUT.PUT_LINE('  Days ahead: ' || v_days_ahead);
+                        
+                        -- Validate table exists and get interval information
+                        SELECT COUNT(*) INTO v_count FROM all_part_tables
+                        WHERE owner = v_schema AND table_name = v_table;
+                        
+                        IF v_count = 0 THEN
+                            DBMS_OUTPUT.PUT_LINE('  FAILED: Table does not exist or is not partitioned');
+                            v_result := FALSE;
+                        ELSE
+                            -- Get partitioning details
+                            FOR rec IN (
+                                SELECT partitioning_type, interval, partition_key_columns
+                                FROM all_part_tables
+                                WHERE owner = v_schema AND table_name = v_table
+                            ) LOOP
+                                v_partition_type := rec.partitioning_type;
+                                
+                                IF rec.interval IS NULL THEN
+                                    DBMS_OUTPUT.PUT_LINE('  FAILED: Table is not interval partitioned');
+                                    v_result := FALSE;
+                                ELSE
+                                    DBMS_OUTPUT.PUT_LINE('  ✓ Table is interval partitioned');
+                                    DBMS_OUTPUT.PUT_LINE('  Interval: ' || rec.interval);
+                                    
+                                    -- Parse interval to determine unit (NUMTODSINTERVAL or INTERVAL)
+                                    IF rec.interval LIKE '%DAY%' THEN
+                                        v_interval_unit := 'DAY';
+                                        -- Extract number from interval (e.g., 'NUMTODSINTERVAL(1,''DAY'')' -> 1)
+                                        DECLARE
+                                            v_num_start NUMBER := INSTR(rec.interval, '(') + 1;
+                                            v_num_end NUMBER := INSTR(rec.interval, ',', v_num_start) - 1;
+                                            v_num_str VARCHAR2(100);
+                                        BEGIN
+                                            v_num_str := SUBSTR(rec.interval, v_num_start, v_num_end - v_num_start);
+                                            -- For hour partitions, calculate hours per day
+                                            IF rec.interval LIKE '%HOUR%' THEN
+                                                v_interval_unit := 'HOUR';
+                                            END IF;
+                                        END;
+                                    ELSIF rec.interval LIKE '%HOUR%' THEN
+                                        v_interval_unit := 'HOUR';
+                                        -- For hour partitions, each hour is one partition
+                                        v_days_ahead := v_days_ahead * 24; -- Convert days to hours
+                                    ELSIF rec.interval LIKE '%MONTH%' THEN
+                                        v_interval_unit := 'MONTH';
+                                    END IF;
+                                END IF;
+                            END LOOP;
+                            
+                            IF NOT v_result THEN
+                                DBMS_OUTPUT.PUT_LINE('RESULT: FAILED - Invalid partition configuration');
+                                RETURN;
+                            END IF;
+                            
+                            -- Get max partition date
+                            BEGIN
+                                SELECT MAX(partition_position), MAX(high_value)
+                                INTO v_count, v_max_partition_date
+                                FROM all_tab_partitions
+                                WHERE table_owner = v_schema AND table_name = v_table;
+                                
+                                DBMS_OUTPUT.PUT_LINE('  Max partition date: ' || TO_CHAR(v_max_partition_date, 'YYYY-MM-DD'));
+                            EXCEPTION WHEN OTHERS THEN
+                                DBMS_OUTPUT.PUT_LINE('  WARNING: Could not determine max partition date: ' || SQLERRM);
+                                v_max_partition_date := TRUNC(SYSDATE);
+                            END;
+                            
+                            -- Calculate how many partitions to pre-create
+                            IF v_interval_unit = 'HOUR' THEN
+                                v_partition_count := v_days_ahead; -- Already converted to hours
+                            ELSIF v_interval_unit = 'DAY' THEN
+                                v_partition_count := v_days_ahead;
+                            ELSIF v_interval_unit = 'MONTH' THEN
+                                v_partition_count := v_days_ahead / 30; -- Approximately
+                            END IF;
+                            
+                            DBMS_OUTPUT.PUT_LINE('  Interval unit: ' || v_interval_unit);
+                            DBMS_OUTPUT.PUT_LINE('  Partitions to pre-create: ' || v_partition_count);
+                            
+                            -- Pre-create partitions
+                            FOR i IN 1..v_partition_count LOOP
+                                IF v_interval_unit = 'HOUR' THEN
+                                    v_next_partition_date := v_current_date + (v_max_partition_date - v_current_date) + (i - 1) / 24;
+                                ELSIF v_interval_unit = 'DAY' THEN
+                                    v_next_partition_date := v_current_date + (v_max_partition_date - v_current_date) + i;
+                                ELSIF v_interval_unit = 'MONTH' THEN
+                                    v_next_partition_date := ADD_MONTHS(v_current_date, i);
+                                END IF;
+                                
+                                BEGIN
+                                    -- Create partition only if it doesn't exist
+                                    DECLARE
+                                        v_part_exists NUMBER := 0;
+                                    BEGIN
+                                        SELECT COUNT(*) INTO v_part_exists
+                                        FROM all_tab_partitions
+                                        WHERE table_owner = v_schema 
+                                          AND table_name = v_table
+                                          AND high_value = 'TO_DATE(''' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD') || ''', ''YYYY-MM-DD'')';
+                                        
+                                        IF v_part_exists = 0 THEN
+                                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_table || 
+                                                             ' SPLIT PARTITION (FOR (TO_DATE(''' || 
+                                                             TO_CHAR(v_next_partition_date, 'YYYY-MM-DD') || 
+                                                             ''', ''YYYY-MM-DD''))) AT ' || 
+                                                             TO_DATE(v_next_partition_date, 'YYYY-MM-DD');
+                                            DBMS_OUTPUT.PUT_LINE('  ✓ Pre-created partition: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
+                                        ELSE
+                                            DBMS_OUTPUT.PUT_LINE('  - Partition exists: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
+                                        END IF;
+                                    END;
+                                EXCEPTION WHEN OTHERS THEN
+                                    -- Ignore errors if partition already exists or other non-critical issues
+                                    IF SQLERRM LIKE '%already exists%' OR SQLERRM LIKE '%does not exist%' THEN
+                                        DBMS_OUTPUT.PUT_LINE('  - Skipped: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
+                                    ELSE
+                                        DBMS_OUTPUT.PUT_LINE('  ✗ Error creating partition for ' || 
+                                                           TO_CHAR(v_next_partition_date, 'YYYY-MM-DD') || ': ' || SQLERRM);
+                                    END IF;
+                                END;
+                            END LOOP;
+                            
+                            DBMS_OUTPUT.PUT_LINE('RESULT: PASSED - Pre-creation complete');
+                        END IF;
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            DBMS_OUTPUT.PUT_LINE('RESULT: ERROR - ' || SQLERRM);
+                            v_result := FALSE;
+                    END;
+                    
+                WHEN 'ADD_HASH_SUBPARTITIONS' THEN
+                    -- Add hash subpartitions to an interval-partitioned table
+                    DECLARE
+                        v_schema VARCHAR2(128) := UPPER('&arg3');
+                        v_table VARCHAR2(128) := UPPER('&arg4');
+                        v_subpart_col VARCHAR2(128) := UPPER('&arg5'); -- subpartition column
+                        v_subpart_count NUMBER := TO_NUMBER(NVL('&arg6', '8')); -- number of subpartitions
+                    BEGIN
+                        DBMS_OUTPUT.PUT_LINE('Adding hash subpartitions to interval table...');
+                        DBMS_OUTPUT.PUT_LINE('  Schema: ' || v_schema);
+                        DBMS_OUTPUT.PUT_LINE('  Table: ' || v_table);
+                        DBMS_OUTPUT.PUT_LINE('  Subpartition Column: ' || v_subpart_col);
+                        DBMS_OUTPUT.PUT_LINE('  Subpartition Count: ' || v_subpart_count);
+                        
+                        -- Validate table exists and is partitioned
+                        SELECT COUNT(*) INTO v_count FROM all_part_tables
+                        WHERE owner = v_schema AND table_name = v_table;
+                        
+                        IF v_count = 0 THEN
+                            DBMS_OUTPUT.PUT_LINE('  FAILED: Table does not exist or is not partitioned');
+                            v_result := FALSE;
+                        ELSE
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Table is partitioned');
+                            
+                            -- Check current partitioning
+                            FOR rec IN (
+                                SELECT partitioning_type, interval, def_subpartition_count
+                                FROM all_part_tables
+                                WHERE owner = v_schema AND table_name = v_table
+                            ) LOOP
+                                DBMS_OUTPUT.PUT_LINE('  Current partitioning: ' || rec.partitioning_type);
+                                DBMS_OUTPUT.PUT_LINE('  Interval: ' || NVL(rec.interval, 'N/A'));
+                                DBMS_OUTPUT.PUT_LINE('  Current subpartitions: ' || NVL(rec.def_subpartition_count, 0));
+                                
+                                IF rec.partitioning_type != 'RANGE' OR rec.interval IS NULL THEN
+                                    DBMS_OUTPUT.PUT_LINE('  FAILED: Table must be interval-range partitioned');
+                                    v_result := FALSE;
+                                ELSIF rec.def_subpartition_count > 0 THEN
+                                    DBMS_OUTPUT.PUT_LINE('  WARNING: Table already has subpartitions');
+                                END IF;
+                            END LOOP;
+                            
+                            IF NOT v_result THEN
+                                DBMS_OUTPUT.PUT_LINE('RESULT: FAILED - Table not eligible for subpartitioning');
+                                RETURN;
+                            END IF;
+                            
+                            -- Modify table to add subpartitions
+                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_table || 
+                                             ' SET SUBPARTITION TEMPLATE (SUBPARTITION BY HASH (' || 
+                                             v_subpart_col || ') SUBPARTITIONS ' || v_subpart_count || ')';
+                            
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Modified table structure');
+                            
+                            -- Regenerate partitions to apply template
+                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_table || 
+                                             ' MERGE PARTITIONS';
+                            
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Applied subpartition template to future partitions');
+                            DBMS_OUTPUT.PUT_LINE('RESULT: PASSED - Hash subpartitions added successfully');
+                        END IF;
+                    EXCEPTION
+                        WHEN OTHERS THEN
+                            DBMS_OUTPUT.PUT_LINE('RESULT: ERROR - ' || SQLERRM);
+                            v_result := FALSE;
+                    END;
+                    
                 ELSE
                     DBMS_OUTPUT.PUT_LINE('ERROR: Unknown WORKFLOW operation');
-                    DBMS_OUTPUT.PUT_LINE('Valid: pre_swap, post_swap, post_create');
+                    DBMS_OUTPUT.PUT_LINE('Valid: pre_swap, post_swap, post_create, create_renamed_view, finalize_swap, add_hash_subpartitions');
                     v_result := FALSE;
             END CASE;
         

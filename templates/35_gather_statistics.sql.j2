@@ -1,0 +1,40 @@
+-- GATHER STATISTICS: {{ owner }}.{{ new_table_name }}
+-- ======================================================================
+-- Generated: {{ generation_date }}
+-- Source: {{ owner }}.{{ old_table_name }}
+--
+-- Purpose: Gather table and index statistics after index creation
+--          Statistics are essential for:
+--          - Query optimizer performance
+--          - Column cardinality calculations
+--          - Partition pruning decisions
+--          - Index selectivity analysis
+--
+-- Note: This script gathers normal statistics (no customization)
+--       Use this for production-like performance characteristics
+-- ======================================================================
+
+PROMPT
+PROMPT ======================================================================
+PROMPT Gathering statistics for {{ owner }}.{{ new_table_name }}
+PROMPT ======================================================================
+PROMPT
+
+-- Gather table statistics
+PROMPT Gathering table statistics...
+BEGIN
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname => '{{ owner }}',
+        tabname => '{{ new_table_name }}',
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        method_opt => 'FOR ALL COLUMNS SIZE AUTO',
+        cascade => TRUE,
+        no_invalidate => FALSE
+    );
+    DBMS_OUTPUT.PUT_LINE('✓ Statistics gathered for {{ owner }}.{{ new_table_name }}');
+END;
+/
+
+PROMPT ✓ Statistics gathering complete
+PROMPT ======================================================================
+

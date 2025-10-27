@@ -5,7 +5,7 @@ Generated Migration Models
 Auto-generated from enhanced_migration_schema.json
 DO NOT EDIT MANUALLY - Run: python3 src/schema_to_dataclass.py
 
-Generated: 2025-10-27 07:36:03
+Generated: 2025-10-27 09:20:20
 """
 
 from __future__ import annotations
@@ -110,13 +110,21 @@ class LocalityEnum(Enum):
     GLOBAL = "GLOBAL"
 
 @dataclass
-class ConnectionDetails:
-    """Database connection details for metadata tracking"""
-    type: str = None  # Oracle connection type
-    host: str = None  # Database host
-    port: str = None  # Database port
-    service: str = None  # Oracle service name or SID
-    user: str = None  # Database user
+class IndexInfo:
+    """Oracle index definition with storage details"""
+    index_name: str  # Index name
+    index_type: str  # Oracle index type
+    columns: str  # Comma-separated list of index columns
+    uniqueness: str = None  # Index uniqueness
+    tablespace_name: str = None  # Index tablespace
+    compression: str = None  # Index compression
+    pct_free: int = None  # Index PCTFREE
+    ini_trans: int = None  # Index INITRANS
+    max_trans: int = None  # Index MAXTRANS
+    degree: str = None  # Parallel degree for index operations
+    partitioned: YesNoEnum = None
+    is_reverse: bool = None  # Whether index is reverse key
+    locality: Optional[str] = None  # Partitioned index locality
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization - explicit recursive conversion"""
@@ -135,31 +143,107 @@ class ConnectionDetails:
         result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
         return result
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConnectionDetails":
+    def from_dict(cls, data: Dict[str, Any]) -> "IndexInfo":
         """Create instance from dictionary with proper type conversions"""
         if data is None:
             return None
         return cls(
-            type=data.get("type"),
-            host=data.get("host"),
-            port=data.get("port"),
-            service=data.get("service"),
-            user=data.get("user"),
+            index_name=data["index_name"],
+            index_type=data["index_type"],
+            uniqueness=data.get("uniqueness"),
+            tablespace_name=data.get("tablespace_name"),
+            compression=data.get("compression"),
+            pct_free=data.get("pct_free"),
+            ini_trans=data.get("ini_trans"),
+            max_trans=data.get("max_trans"),
+            degree=data.get("degree"),
+            partitioned=YesNoEnum(data["partitioned"]) if "partitioned" in data and data["partitioned"] is not None else None,
+            columns=data["columns"],
+            is_reverse=data.get("is_reverse", False),
+            locality=data.get("locality"),
         )
 
 
 @dataclass
-class Metadata:
-    """Metadata about the migration configuration"""
-    generated_date: str  # Date and time when configuration was generated
-    source_schema: str  # Oracle schema name being analyzed
-    environment: str = None  # Environment name (dev, test, prod)
-    source_database_service: str = None  # Oracle database service name
-    source_connection_details: ConnectionDetails = None
-    discovery_criteria: str = None  # Criteria used for table discovery
-    total_tables_found: int = None  # Total number of tables discovered
-    tables_selected_for_migration: int = None  # Number of tables enabled for migration
-    schema: str = None  # Alias for source_schema for backward compatibility
+class ColumnInfo:
+    """Complete column metadata for Oracle DDL generation"""
+    name: str  # Column name
+    type: str  # Oracle data type (VARCHAR2, NUMBER, etc.)
+    nullable: YesNoEnum
+    length: Optional[int] = None  # Data length for VARCHAR2, etc.
+    precision: Optional[int] = None  # Numeric precision
+    scale: Optional[int] = None  # Numeric scale
+    default: Optional[str] = None  # Default value expression
+    char_length: Optional[int] = None  # Character length for CHAR/VARCHAR2
+    is_identity: bool = None  # Whether column is an identity column
+    identity_generation: Optional[str] = None  # Identity generation type
+    identity_sequence: Optional[str] = None  # Associated sequence name for identity
+    identity_start_with: Optional[int] = None  # Identity START WITH value
+    identity_increment_by: Optional[int] = None  # Identity INCREMENT BY value
+    identity_max_value: Optional[int] = None  # Identity MAXVALUE
+    identity_min_value: Optional[int] = None  # Identity MINVALUE
+    identity_cache_size: Optional[int] = None  # Identity CACHE size
+    identity_cycle_flag: Optional[str] = None  # Identity CYCLE flag
+    identity_order_flag: Optional[str] = None  # Identity ORDER flag
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        # Remove identity-specific fields if this is not an identity column
+        if hasattr(self, 'is_identity') and not self.is_identity:
+            identity_fields = [
+                'identity_generation', 'identity_sequence', 'identity_start_with',
+                'identity_increment_by', 'identity_max_value', 'identity_min_value',
+                'identity_cache_size', 'identity_cycle_flag', 'identity_order_flag'
+            ]
+            for field in identity_fields:
+                result.pop(field, None)
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ColumnInfo":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            name=data["name"],
+            type=data["type"],
+            length=data.get("length"),
+            precision=data.get("precision"),
+            scale=data.get("scale"),
+            nullable=YesNoEnum(data["nullable"]) if "nullable" in data else None,
+            default=data.get("default"),
+            char_length=data.get("char_length"),
+            is_identity=data.get("is_identity", False),
+            identity_generation=data.get("identity_generation"),
+            identity_sequence=data.get("identity_sequence"),
+            identity_start_with=data.get("identity_start_with"),
+            identity_increment_by=data.get("identity_increment_by"),
+            identity_max_value=data.get("identity_max_value"),
+            identity_min_value=data.get("identity_min_value"),
+            identity_cache_size=data.get("identity_cache_size"),
+            identity_cycle_flag=data.get("identity_cycle_flag"),
+            identity_order_flag=data.get("identity_order_flag"),
+        )
+
+
+@dataclass
+class AvailableColumns:
+    """Columns available for different partitioning strategies"""
+    timestamp_columns: List[ColumnInfo] = field(default_factory=list)  # Timestamp/date columns suitable for interval partitioning
+    numeric_columns: List[ColumnInfo] = field(default_factory=list)  # Numeric columns suitable for hash/range partitioning
+    string_columns: List[ColumnInfo] = field(default_factory=list)  # String columns suitable for hash/list partitioning
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization - explicit recursive conversion"""
@@ -178,20 +262,175 @@ class Metadata:
         result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
         return result
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Metadata":
+    def from_dict(cls, data: Dict[str, Any]) -> "AvailableColumns":
         """Create instance from dictionary with proper type conversions"""
         if data is None:
             return None
         return cls(
-            generated_date=data["generated_date"],
-            environment=data.get("environment", "global"),
-            source_schema=data["source_schema"],
-            source_database_service=data.get("source_database_service"),
-            source_connection_details=ConnectionDetails.from_dict(data["source_connection_details"]) if "source_connection_details" in data and data["source_connection_details"] is not None else None,
-            discovery_criteria=data.get("discovery_criteria"),
-            total_tables_found=data.get("total_tables_found"),
-            tables_selected_for_migration=data.get("tables_selected_for_migration"),
-            schema=data.get("schema"),
+            timestamp_columns=[ColumnInfo.from_dict(x) for x in data.get("timestamp_columns", [])],
+            numeric_columns=[ColumnInfo.from_dict(x) for x in data.get("numeric_columns", [])],
+            string_columns=[ColumnInfo.from_dict(x) for x in data.get("string_columns", [])],
+        )
+
+
+@dataclass
+class StorageParameters:
+    """Oracle table storage parameters"""
+    compression: str = None  # Table compression setting
+    compress_for: str = None  # Compression type details
+    pct_free: int = None  # PCTFREE storage parameter
+    ini_trans: int = None  # INITRANS storage parameter
+    max_trans: int = None  # MAXTRANS storage parameter
+    initial_extent: Optional[int] = None  # Initial extent size in bytes
+    next_extent: Optional[int] = None  # Next extent size in bytes
+    buffer_pool: str = None  # Buffer pool assignment
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "StorageParameters":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            compression=data.get("compression", "DISABLED"),
+            compress_for=data.get("compress_for"),
+            pct_free=data.get("pct_free", 10),
+            ini_trans=data.get("ini_trans", 1),
+            max_trans=data.get("max_trans", 255),
+            initial_extent=data.get("initial_extent"),
+            next_extent=data.get("next_extent"),
+            buffer_pool=data.get("buffer_pool", "DEFAULT"),
+        )
+
+
+@dataclass
+class LobStorageInfo:
+    """LOB storage configuration for Oracle DDL"""
+    column_name: str  # LOB column name
+    tablespace_name: str  # LOB tablespace
+    segment_name: str = None  # LOB segment name
+    original_tablespace: str = None  # Original LOB tablespace
+    securefile: YesNoEnum = None
+    compression: YesNoEnum = None
+    deduplication: YesNoEnum = None
+    in_row: YesNoEnum = None
+    chunk: int = None  # LOB chunk size
+    cache: YesNoEnum = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "LobStorageInfo":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            column_name=data["column_name"],
+            segment_name=data.get("segment_name"),
+            tablespace_name=data["tablespace_name"],
+            original_tablespace=data.get("original_tablespace"),
+            securefile=YesNoEnum(data["securefile"]) if "securefile" in data and data["securefile"] is not None else None,
+            compression=YesNoEnum(data["compression"]) if "compression" in data and data["compression"] is not None else None,
+            deduplication=YesNoEnum(data["deduplication"]) if "deduplication" in data and data["deduplication"] is not None else None,
+            in_row=YesNoEnum(data["in_row"]) if "in_row" in data and data["in_row"] is not None else None,
+            chunk=data.get("chunk"),
+            cache=YesNoEnum(data["cache"]) if "cache" in data and data["cache"] is not None else None,
+        )
+
+
+@dataclass
+class CurrentState:
+    """Complete current table state with all Oracle metadata"""
+    is_partitioned: bool  # Whether table is currently partitioned
+    partition_type: PartitionTypeEnum
+    size_gb: float  # Table size in GB
+    row_count: int  # Approximate row count
+    lob_count: int  # Number of LOB columns
+    index_count: int  # Number of indexes
+    columns: List[ColumnInfo]  # Complete column metadata for DDL generation
+    lob_storage: List[LobStorageInfo]  # LOB storage configuration details
+    storage_parameters: StorageParameters
+    indexes: List[IndexInfo]  # Index definitions with columns and storage
+    available_columns: AvailableColumns
+    is_interval: bool = None  # Whether table uses interval partitioning
+    interval_definition: str = None  # Current interval definition if applicable
+    current_partition_count: int = None  # Current number of partitions
+    current_partition_key: str = None  # Current partition key column(s)
+    has_subpartitions: bool = None  # Whether table has subpartitions
+    subpartition_type: str = None  # Current subpartition type if applicable
+    subpartition_count: int = None  # Current number of subpartitions per partition
+    grants: List[Dict[str, Any]] = field(default_factory=list)  # Table grants and privileges for DDL generation
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CurrentState":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            is_partitioned=data.get("is_partitioned", False),
+            partition_type=PartitionTypeEnum(data["partition_type"]) if "partition_type" in data else None,
+            size_gb=data["size_gb"],
+            row_count=data["row_count"],
+            lob_count=data["lob_count"],
+            index_count=data["index_count"],
+            columns=[ColumnInfo.from_dict(x) for x in data.get("columns", [])],
+            lob_storage=[LobStorageInfo.from_dict(x) for x in data.get("lob_storage", [])],
+            storage_parameters=StorageParameters.from_dict(data["storage_parameters"]) if "storage_parameters" in data else None,
+            indexes=[IndexInfo.from_dict(x) for x in data.get("indexes", [])],
+            available_columns=AvailableColumns.from_dict(data["available_columns"]) if "available_columns" in data else None,
+            is_interval=data.get("is_interval", False),
+            interval_definition=data.get("interval_definition"),
+            current_partition_count=data.get("current_partition_count"),
+            current_partition_key=data.get("current_partition_key"),
+            has_subpartitions=data.get("has_subpartitions", False),
+            subpartition_type=data.get("subpartition_type"),
+            subpartition_count=data.get("subpartition_count"),
+            grants=data.get("grants", []),
         )
 
 
@@ -362,331 +601,6 @@ class CommonSettings:
 
 
 @dataclass
-class LobStorageInfo:
-    """LOB storage configuration for Oracle DDL"""
-    column_name: str  # LOB column name
-    tablespace_name: str  # LOB tablespace
-    segment_name: str = None  # LOB segment name
-    original_tablespace: str = None  # Original LOB tablespace
-    securefile: YesNoEnum = None
-    compression: YesNoEnum = None
-    deduplication: YesNoEnum = None
-    in_row: YesNoEnum = None
-    chunk: int = None  # LOB chunk size
-    cache: YesNoEnum = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "LobStorageInfo":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            column_name=data["column_name"],
-            segment_name=data.get("segment_name"),
-            tablespace_name=data["tablespace_name"],
-            original_tablespace=data.get("original_tablespace"),
-            securefile=YesNoEnum(data["securefile"]) if "securefile" in data and data["securefile"] is not None else None,
-            compression=YesNoEnum(data["compression"]) if "compression" in data and data["compression"] is not None else None,
-            deduplication=YesNoEnum(data["deduplication"]) if "deduplication" in data and data["deduplication"] is not None else None,
-            in_row=YesNoEnum(data["in_row"]) if "in_row" in data and data["in_row"] is not None else None,
-            chunk=data.get("chunk"),
-            cache=YesNoEnum(data["cache"]) if "cache" in data and data["cache"] is not None else None,
-        )
-
-
-@dataclass
-class StorageParameters:
-    """Oracle table storage parameters"""
-    compression: str = None  # Table compression setting
-    compress_for: str = None  # Compression type details
-    pct_free: int = None  # PCTFREE storage parameter
-    ini_trans: int = None  # INITRANS storage parameter
-    max_trans: int = None  # MAXTRANS storage parameter
-    initial_extent: Optional[int] = None  # Initial extent size in bytes
-    next_extent: Optional[int] = None  # Next extent size in bytes
-    buffer_pool: str = None  # Buffer pool assignment
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "StorageParameters":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            compression=data.get("compression", "DISABLED"),
-            compress_for=data.get("compress_for"),
-            pct_free=data.get("pct_free", 10),
-            ini_trans=data.get("ini_trans", 1),
-            max_trans=data.get("max_trans", 255),
-            initial_extent=data.get("initial_extent"),
-            next_extent=data.get("next_extent"),
-            buffer_pool=data.get("buffer_pool", "DEFAULT"),
-        )
-
-
-@dataclass
-class IndexInfo:
-    """Oracle index definition with storage details"""
-    index_name: str  # Index name
-    index_type: str  # Oracle index type
-    columns: str  # Comma-separated list of index columns
-    uniqueness: str = None  # Index uniqueness
-    tablespace_name: str = None  # Index tablespace
-    compression: str = None  # Index compression
-    pct_free: int = None  # Index PCTFREE
-    ini_trans: int = None  # Index INITRANS
-    max_trans: int = None  # Index MAXTRANS
-    degree: str = None  # Parallel degree for index operations
-    partitioned: YesNoEnum = None
-    is_reverse: bool = None  # Whether index is reverse key
-    locality: Optional[str] = None  # Partitioned index locality
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "IndexInfo":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            index_name=data["index_name"],
-            index_type=data["index_type"],
-            uniqueness=data.get("uniqueness"),
-            tablespace_name=data.get("tablespace_name"),
-            compression=data.get("compression"),
-            pct_free=data.get("pct_free"),
-            ini_trans=data.get("ini_trans"),
-            max_trans=data.get("max_trans"),
-            degree=data.get("degree"),
-            partitioned=YesNoEnum(data["partitioned"]) if "partitioned" in data and data["partitioned"] is not None else None,
-            columns=data["columns"],
-            is_reverse=data.get("is_reverse", False),
-            locality=data.get("locality"),
-        )
-
-
-@dataclass
-class ColumnInfo:
-    """Complete column metadata for Oracle DDL generation"""
-    name: str  # Column name
-    type: str  # Oracle data type (VARCHAR2, NUMBER, etc.)
-    nullable: YesNoEnum
-    length: Optional[int] = None  # Data length for VARCHAR2, etc.
-    precision: Optional[int] = None  # Numeric precision
-    scale: Optional[int] = None  # Numeric scale
-    default: Optional[str] = None  # Default value expression
-    char_length: Optional[int] = None  # Character length for CHAR/VARCHAR2
-    is_identity: bool = None  # Whether column is an identity column
-    identity_generation: Optional[str] = None  # Identity generation type
-    identity_sequence: Optional[str] = None  # Associated sequence name for identity
-    identity_start_with: Optional[int] = None  # Identity START WITH value
-    identity_increment_by: Optional[int] = None  # Identity INCREMENT BY value
-    identity_max_value: Optional[int] = None  # Identity MAXVALUE
-    identity_min_value: Optional[int] = None  # Identity MINVALUE
-    identity_cache_size: Optional[int] = None  # Identity CACHE size
-    identity_cycle_flag: Optional[str] = None  # Identity CYCLE flag
-    identity_order_flag: Optional[str] = None  # Identity ORDER flag
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        # Remove identity-specific fields if this is not an identity column
-        if hasattr(self, 'is_identity') and not self.is_identity:
-            identity_fields = [
-                'identity_generation', 'identity_sequence', 'identity_start_with',
-                'identity_increment_by', 'identity_max_value', 'identity_min_value',
-                'identity_cache_size', 'identity_cycle_flag', 'identity_order_flag'
-            ]
-            for field in identity_fields:
-                result.pop(field, None)
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ColumnInfo":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            name=data["name"],
-            type=data["type"],
-            length=data.get("length"),
-            precision=data.get("precision"),
-            scale=data.get("scale"),
-            nullable=YesNoEnum(data["nullable"]) if "nullable" in data else None,
-            default=data.get("default"),
-            char_length=data.get("char_length"),
-            is_identity=data.get("is_identity", False),
-            identity_generation=data.get("identity_generation"),
-            identity_sequence=data.get("identity_sequence"),
-            identity_start_with=data.get("identity_start_with"),
-            identity_increment_by=data.get("identity_increment_by"),
-            identity_max_value=data.get("identity_max_value"),
-            identity_min_value=data.get("identity_min_value"),
-            identity_cache_size=data.get("identity_cache_size"),
-            identity_cycle_flag=data.get("identity_cycle_flag"),
-            identity_order_flag=data.get("identity_order_flag"),
-        )
-
-
-@dataclass
-class AvailableColumns:
-    """Columns available for different partitioning strategies"""
-    timestamp_columns: List[ColumnInfo] = field(default_factory=list)  # Timestamp/date columns suitable for interval partitioning
-    numeric_columns: List[ColumnInfo] = field(default_factory=list)  # Numeric columns suitable for hash/range partitioning
-    string_columns: List[ColumnInfo] = field(default_factory=list)  # String columns suitable for hash/list partitioning
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AvailableColumns":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            timestamp_columns=[ColumnInfo.from_dict(x) for x in data.get("timestamp_columns", [])],
-            numeric_columns=[ColumnInfo.from_dict(x) for x in data.get("numeric_columns", [])],
-            string_columns=[ColumnInfo.from_dict(x) for x in data.get("string_columns", [])],
-        )
-
-
-@dataclass
-class CurrentState:
-    """Complete current table state with all Oracle metadata"""
-    is_partitioned: bool  # Whether table is currently partitioned
-    partition_type: PartitionTypeEnum
-    size_gb: float  # Table size in GB
-    row_count: int  # Approximate row count
-    lob_count: int  # Number of LOB columns
-    index_count: int  # Number of indexes
-    columns: List[ColumnInfo]  # Complete column metadata for DDL generation
-    lob_storage: List[LobStorageInfo]  # LOB storage configuration details
-    storage_parameters: StorageParameters
-    indexes: List[IndexInfo]  # Index definitions with columns and storage
-    available_columns: AvailableColumns
-    is_interval: bool = None  # Whether table uses interval partitioning
-    interval_definition: str = None  # Current interval definition if applicable
-    current_partition_count: int = None  # Current number of partitions
-    current_partition_key: str = None  # Current partition key column(s)
-    has_subpartitions: bool = None  # Whether table has subpartitions
-    subpartition_type: str = None  # Current subpartition type if applicable
-    subpartition_count: int = None  # Current number of subpartitions per partition
-    grants: List[Dict[str, Any]] = field(default_factory=list)  # Table grants and privileges for DDL generation
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "CurrentState":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            is_partitioned=data.get("is_partitioned", False),
-            partition_type=PartitionTypeEnum(data["partition_type"]) if "partition_type" in data else None,
-            size_gb=data["size_gb"],
-            row_count=data["row_count"],
-            lob_count=data["lob_count"],
-            index_count=data["index_count"],
-            columns=[ColumnInfo.from_dict(x) for x in data.get("columns", [])],
-            lob_storage=[LobStorageInfo.from_dict(x) for x in data.get("lob_storage", [])],
-            storage_parameters=StorageParameters.from_dict(data["storage_parameters"]) if "storage_parameters" in data else None,
-            indexes=[IndexInfo.from_dict(x) for x in data.get("indexes", [])],
-            available_columns=AvailableColumns.from_dict(data["available_columns"]) if "available_columns" in data else None,
-            is_interval=data.get("is_interval", False),
-            interval_definition=data.get("interval_definition"),
-            current_partition_count=data.get("current_partition_count"),
-            current_partition_key=data.get("current_partition_key"),
-            has_subpartitions=data.get("has_subpartitions", False),
-            subpartition_type=data.get("subpartition_type"),
-            subpartition_count=data.get("subpartition_count"),
-            grants=data.get("grants", []),
-        )
-
-
-@dataclass
 class TableConfig:
     """Complete table configuration for migration"""
     enabled: bool  # Whether this table should be migrated
@@ -726,11 +640,13 @@ class TableConfig:
 
 
 @dataclass
-class SubpartitionDefaults:
-    """Default settings for subpartitioning"""
-    min_count: int = None  # Minimum subpartition count
-    max_count: int = None  # Maximum subpartition count
-    size_based_recommendations: Dict[str, Any] = field(default_factory=dict)  # Size-based subpartition recommendations
+class ConnectionDetails:
+    """Database connection details for metadata tracking"""
+    type: str = None  # Oracle connection type
+    host: str = None  # Database host
+    port: str = None  # Database port
+    service: str = None  # Oracle service name or SID
+    user: str = None  # Database user
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization - explicit recursive conversion"""
@@ -749,23 +665,31 @@ class SubpartitionDefaults:
         result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
         return result
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SubpartitionDefaults":
+    def from_dict(cls, data: Dict[str, Any]) -> "ConnectionDetails":
         """Create instance from dictionary with proper type conversions"""
         if data is None:
             return None
         return cls(
-            min_count=data.get("min_count"),
-            max_count=data.get("max_count"),
-            size_based_recommendations=data.get("size_based_recommendations"),
+            type=data.get("type"),
+            host=data.get("host"),
+            port=data.get("port"),
+            service=data.get("service"),
+            user=data.get("user"),
         )
 
 
 @dataclass
-class ParallelDefaults:
-    """Default parallel execution settings"""
-    min_degree: int = None  # Minimum parallel degree
-    max_degree: int = None  # Maximum parallel degree
-    default_degree: int = None  # Default parallel degree
+class Metadata:
+    """Metadata about the migration configuration"""
+    generated_date: str  # Date and time when configuration was generated
+    source_schema: str  # Oracle schema name being analyzed
+    environment: str = None  # Environment name (dev, test, prod)
+    source_database_service: str = None  # Oracle database service name
+    source_connection_details: ConnectionDetails = None
+    discovery_criteria: str = None  # Criteria used for table discovery
+    total_tables_found: int = None  # Total number of tables discovered
+    tables_selected_for_migration: int = None  # Number of tables enabled for migration
+    schema: str = None  # Alias for source_schema for backward compatibility
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization - explicit recursive conversion"""
@@ -784,14 +708,20 @@ class ParallelDefaults:
         result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
         return result
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ParallelDefaults":
+    def from_dict(cls, data: Dict[str, Any]) -> "Metadata":
         """Create instance from dictionary with proper type conversions"""
         if data is None:
             return None
         return cls(
-            min_degree=data.get("min_degree"),
-            max_degree=data.get("max_degree"),
-            default_degree=data.get("default_degree"),
+            generated_date=data["generated_date"],
+            environment=data.get("environment", "global"),
+            source_schema=data["source_schema"],
+            source_database_service=data.get("source_database_service"),
+            source_connection_details=ConnectionDetails.from_dict(data["source_connection_details"]) if "source_connection_details" in data and data["source_connection_details"] is not None else None,
+            discovery_criteria=data.get("discovery_criteria"),
+            total_tables_found=data.get("total_tables_found"),
+            tables_selected_for_migration=data.get("tables_selected_for_migration"),
+            schema=data.get("schema"),
         )
 
 
@@ -856,6 +786,76 @@ class DataTablespaces:
             return None
         return cls(
             data=TablespaceConfig.from_dict(data["data"]) if "data" in data and data["data"] is not None else None,
+        )
+
+
+@dataclass
+class ParallelDefaults:
+    """Default parallel execution settings"""
+    min_degree: int = None  # Minimum parallel degree
+    max_degree: int = None  # Maximum parallel degree
+    default_degree: int = None  # Default parallel degree
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ParallelDefaults":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            min_degree=data.get("min_degree"),
+            max_degree=data.get("max_degree"),
+            default_degree=data.get("default_degree"),
+        )
+
+
+@dataclass
+class SubpartitionDefaults:
+    """Default settings for subpartitioning"""
+    min_count: int = None  # Minimum subpartition count
+    max_count: int = None  # Maximum subpartition count
+    size_based_recommendations: Dict[str, Any] = field(default_factory=dict)  # Size-based subpartition recommendations
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SubpartitionDefaults":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            min_count=data.get("min_count"),
+            max_count=data.get("max_count"),
+            size_based_recommendations=data.get("size_based_recommendations"),
         )
 
 
