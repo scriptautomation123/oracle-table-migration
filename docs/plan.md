@@ -1,504 +1,228 @@
-# Oracle Migration - Schema-Driven Data Flow Architecture
+# Principal Engineer Thorough Review & Refactoring Plan
 
-## Core Architecture Principle
-
-**Schema → Models → Config → Code**
-
-This is a **data transformation pipeline**, not an OOP class hierarchy. Focus on data flowing through transformations, not on building custom classes.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│         SCHEMA-DRIVEN DATA TRANSFORMATION PIPELINE          │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  JSON Schema → Python Models → Config Objects → SQL Code    │
-│                                                              │
-│  enhanced_migration_schema.json                             │
-│       ↓ (code generation)                                   │
-│  migration_models.py (dataclasses)                          │
-│       ↓ (database discovery populates)                      │
-│  config.json (MigrationConfig object serialized)            │
-│       ↓ (template rendering consumes)                       │
-│  master1.sql (generated DDL code)                           │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-KEY INSIGHT: This is a DATA PIPELINE, not an OOP system.
-- Use dataclasses for data containers
-- Use functions for transformations
-- Avoid custom service classes, command patterns, protocols
-- Let data flow naturally through simple transformations
-```
-
-## Data Flow Steps
-
-### Step 1: Schema → Models (Code Generation)
-
-```
-INPUT:  lib/enhanced_migration_schema.json (JSON Schema)
-TRANSFORM: src/schema_to_dataclass.py (generator function)
-OUTPUT: lib/migration_models.py (typed Python dataclasses)
-
-This is pure code generation - no runtime logic.
-```
-
-### Step 2: Oracle DB → Config (Data Discovery)
-
-```
-INPUT:  Oracle Database (live data)
-TRANSFORM: Discovery functions (query Oracle, build objects)
-OUTPUT: config.json (serialized MigrationConfig dataclass)
-
-This is data extraction and serialization.
-Key functions:
-- discover_schema() - queries Oracle, returns MigrationConfig object
-- save_config() - serializes MigrationConfig to JSON
-```
-
-### Step 3: Config → SQL (Code Generation)
-
-```
-INPUT:  config.json (MigrationConfig object)
-TRANSFORM: Jinja2 rendering (templates + context)
-OUTPUT: master1.sql (generated DDL)
-
-This is template-based code generation.
-Key functions:
-- load_config() - deserializes JSON to MigrationConfig object
-- prepare_context() - extracts data for templates
-- render_templates() - applies Jinja2 to generate SQL
-```
-
-### Step 4: Execute (Run Generated Code)
-
-```
-INPUT:  master1.sql
-EXECUTE: sqlcl (Oracle execution)
-OUTPUT: Migrated table in Oracle
-
-This is execution of generated code - outside our system.
-```
-
-## Anti-Patterns to Remove
-
-### ❌ Don't: Build Class Hierarchies
-
-```python
-# WRONG - Over-engineered OOP
-class MigrationCommand(ABC):
-    @abstractmethod
-    def execute(self): ...
-
-class DiscoveryCommand(MigrationCommand):
-    def execute(self): ...
-
-class DatabaseServiceProtocol(Protocol): ...
-class ConfigServiceProtocol(Protocol): ...
-```
-
-### ✅ Do: Write Simple Data Transformation Functions
-
-```python
-# RIGHT - Data pipeline functions
-def discover_schema(connection, schema_name) -> MigrationConfig:
-    """Query Oracle and build config object"""
-    # Returns data, not objects
-
-def save_config(config: MigrationConfig, filepath: str):
-    """Serialize config to JSON"""
-    # Pure data transformation
-
-def load_config(filepath: str) -> MigrationConfig:
-    """Deserialize JSON to config object"""
-    # Pure data transformation
-
-def generate_ddl(config: MigrationConfig, output_dir: Path):
-    """Render templates from config"""
-    # Data → Code transformation
-```
-
-## Refactoring Plan (Data Flow Focused)
-
-### Phase 0: Fix Critical Bugs (30 min)
-
-**0.1 Fix Syntax Error in discovery_queries.py**
-
-- Line 1193: Broken list comprehension blocks data flow
-- Fix: Complete the list comprehension properly
-- This is a data transformation function - return list of ColumnInfo objects
-
-**0.2 Remove Debug Print Statements**
-
-- Lines 576, 592, 621, 623, 1171 in discovery_queries.py
-- These pollute the data pipeline
-
-**Test**: Verify data flows from Oracle → MigrationConfig object
-
-### Phase 1: Fix Data Serialization (2-3 hours)
-
-**Problem**: MigrationConfig can't serialize/deserialize properly
-
-- Enums don't convert to/from JSON values
-- Nested dataclasses don't reconstruct
-- Breaks the Config → JSON → Config round-trip
-
-**Solution**: Update code generator (schema_to_dataclass.py)
-
-- Generate proper to_dict() that handles Enums
-- Generate proper from_dict() that reconstructs nested objects
-- This is about data transformation, not object behavior
-
-**Test**: Config object → JSON → Config object (perfect round-trip)
-
-### Phase 2: Remove Architectural Violations (1 hour)
-
-**Problem**: generate.py has Step 1 logic embedded
-
-- SchemaToDataclassGenerator class (lines 431-721)
-- SchemaRegenerationCommand wrapper
-- Violates data flow boundaries
-
-**Solution**: DELETE all Step 1 logic from generate.py
-
-- Step 1 (Schema → Models) is separate: python3 src/schema_to_dataclass.py
-- Step 2 & 3 (DB → Config → Code) is: python3 src/generate.py
-- Clean separation of data transformation stages
-
-**Test**: Verify generate.py only handles Steps 2 & 3
-
-### Phase 3: Remove Code Duplication (1 hour)
-
-**3.1 template_filters.py**
-
-- Two functions defining same filters (lines 8-176 and 177-293)
-- These are data transformation helpers for Jinja2
-- Keep ONE definition: register_custom_filters()
-
-**3.2 environment_config.py**
-
-- Duplicate dataclass definitions
-- Violates "Models are generated from Schema" principle
-- Import from migration_models.py instead
-
-**3.3 Archive Dead Code**
-
-- generate_old.py, generate_scripts copy.py
-- Not part of data flow
-
-**Test**: All data transformations still work
-
-### Phase 4: Simplify to Data Pipeline (3 hours)
-
-**Current**: Over-engineered with classes
-
-- Command pattern (MigrationCommand hierarchy)
-- Protocol classes for DI
-- Service wrapper classes
-- RunDirs state tracking class
-
-**Target**: Simple data transformation functions
-
-```python
-# src/generate.py - SIMPLIFIED DATA PIPELINE
-
-from lib.migration_models import MigrationConfig
-from lib.discovery_queries import TableDiscovery
-from lib.template_filters import register_custom_filters
-from jinja2 import Environment, FileSystemLoader
-from pathlib import Path
-from datetime import datetime
-
-# STEP 2: Oracle DB → Config
-def discover_schema(connection_string: str, schema_name: str,
-                    include: list = None, exclude: list = None,
-                    output_dir: str = "output") -> MigrationConfig:
-    """Transform Oracle DB metadata into MigrationConfig object"""
-    
-    with oracle_connection(connection_string) as conn:
-        discovery = TableDiscovery(conn)
-        config = discovery.discover_schema(schema_name, include, exclude)
-        
-        # Save config to timestamped directory
-        run_dir = create_output_dir(output_dir, "discovery")
-        config_file = run_dir / "01_discovery" / "config.json"
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-        config.save_to_file(str(config_file))
-        
-        print(f"✅ Config saved: {config_file}")
-        return config
-
-# STEP 3: Config → SQL
-def generate_ddl(config_file: str, output_dir: str = "output",
-                 template_dir: str = "templates"):
-    """Transform Config object into SQL code via templates"""
-    
-    # Load config object
-    config = MigrationConfig.from_json_file(config_file)
-    
-    # Setup template engine
-    env = Environment(loader=FileSystemLoader(template_dir))
-    register_custom_filters(env)
-    
-    # Generate SQL for each table
-    for table in config.tables:
-        if not table.enabled:
-            continue
-        
-        table_dir = Path(output_dir) / f"{table.owner}_{table.table_name}"
-        table_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Prepare template context (extract data)
-        context = prepare_template_context(table, config)
-        
-        # Render templates (data → code)
-        for template_name in TEMPLATES:
-            template = env.get_template(template_name)
-            output = template.render(**context)
-            output_file = table_dir / template_name.replace(".j2", "")
-            output_file.write_text(output)
-        
-        print(f"✅ Generated DDL for {table.owner}.{table.table_name}")
-
-def prepare_template_context(table: TableConfig, config: MigrationConfig) -> dict:
-    """Extract data from config objects into template-ready dict"""
-    # This is pure data extraction, not object behavior
-    return {
-        "table": table,
-        "owner": table.owner,
-        "table_name": table.table_name,
-        "columns": table.current_state.columns,
-        "indexes": table.current_state.indexes,
-        "target_config": table.common_settings.target_configuration,
-        # ... extract all needed data
-    }
-
-# Helper: Database connection context manager
-@contextmanager
-def oracle_connection(connection_string: str):
-    """Connect to Oracle, yield connection, auto-close"""
-    import oracledb
-    conn = oracledb.connect(connection_string)
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-# Helper: Create timestamped directory
-def create_output_dir(base: str, label: str = "") -> Path:
-    """Create timestamped output directory for data artifacts"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = Path(base) / f"run_{timestamp}_{label}"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-# Main CLI
-def main():
-    parser = argparse.ArgumentParser()
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--discover", action="store_true")
-    mode.add_argument("--config", type=str)
-    
-    # ... parse args ...
-    
-    if args.discover:
-        config = discover_schema(args.connection, args.schema, ...)
-    else:
-        generate_ddl(args.config, args.output_dir, args.template_dir)
-```
-
-**Result**:
-
-- ~600 lines (from 1072) - 44% reduction
-- No Command classes
-- No Protocol classes
-- No Service wrappers
-- Just data flowing through transformations
-
-**Test**: Full 4-step workflow passes
-
-## Data Flow Testing
-
-```bash
-#!/bin/bash
-# test_data_flow.sh - Tests data transformation pipeline
-
-set -e
-
-ORACLE_CONN="system/oracle123@localhost:1521/FREEPDB1"
-SCHEMA="APP_DATA_OWNER"
-OUTPUT="output_test"
-
-echo "=== STEP 1: Schema → Models (if schema changed) ==="
-# python3 src/schema_to_dataclass.py
-# Generates: lib/migration_models.py
-
-echo "=== STEP 2: Oracle DB → Config ==="
-python3 src/generate.py --discover \
-  --schema $SCHEMA \
-  --connection "$ORACLE_CONN" \
-  --output-dir $OUTPUT
-
-CONFIG=$(find $OUTPUT -name "config.json" -type f | head -1)
-echo "✅ Config generated: $CONFIG"
-
-echo "=== TEST: Config Round-Trip ==="
-python3 -c "
-from lib.migration_models import MigrationConfig
-config = MigrationConfig.from_json_file('$CONFIG')
-config.save_to_file('roundtrip_test.json')
-print('✅ Serialization works')
-"
-
-echo "=== STEP 3: Config → SQL ==="
-python3 src/generate.py --config "$CONFIG"
-
-MASTER_SQL=$(find $OUTPUT -name "master1.sql" -type f | head -1)
-echo "✅ DDL generated: $MASTER_SQL"
-
-echo "=== STEP 4: SQL → Oracle (validation only) ==="
-if [ -f "$MASTER_SQL" ]; then
-  wc -l "$MASTER_SQL"
-  echo "✅ Ready for execution"
-fi
-
-echo ""
-echo "=== ✅ DATA PIPELINE COMPLETE ==="
-```
-
-## Files by Data Flow Stage
-
-**STAGE 1: Schema → Models**
-
-- `lib/enhanced_migration_schema.json` (source data)
-- `src/schema_to_dataclass.py` (code generator)
-- `lib/migration_models.py` (generated output)
-
-**STAGE 2: Oracle → Config**
-
-- `src/generate.py --discover` (data extractor)
-- `lib/discovery_queries.py` (Oracle query functions)
-- `lib/environment_config.py` (environment data)
-- `config.json` (serialized data)
-
-**STAGE 3: Config → SQL**
-
-- `src/generate.py --config` (code generator)
-- `templates/*.j2` (code templates)
-- `lib/template_filters.py` (data transformation helpers)
-- `lib/config_validator.py` (data validation)
-- `master1.sql` (generated code)
-
-**STAGE 4: Execute**
-
-- `sqlcl` (external tool)
-- Optional: `lib/migration_validator.py` (data validation)
-
-## Implementation Priority
-
-1. **Fix data pipeline blockers** (Phase 0 & 1)
-
-   - Syntax error breaks data flow
-   - Serialization breaks config round-trip
-
-2. **Enforce stage boundaries** (Phase 2)
-
-   - Remove Step 1 logic from Step 2/3 tool
-
-3. **Remove duplication** (Phase 3)
-
-   - DRY principle for data transformations
-
-4. **Simplify to data pipeline** (Phase 4)
-
-   - Replace classes with functions
-   - Emphasize data transformations
-
-5. **Test data flow** (Continuous)
-
-   - After each phase, verify data flows correctly
-
-## Key Principles
-
-1. **Data over Objects**: Dataclasses hold data, functions transform it
-2. **Pipeline over Hierarchy**: Linear data flow, not class hierarchies
-3. **Generation over Runtime**: Generate code from data, don't build frameworks
-4. **Simple over Complex**: Functions over classes, data over behavior
-5. **Schema-Driven**: Schema is source of truth, everything derives from it
-
-## Success Metrics
-
-1. ✅ Data flows: Schema → Models → Config → Code
-2. ✅ No class hierarchies (Command, Protocol, Service patterns removed)
-3. ✅ Config serialization works (round-trip perfect)
-4. ✅ Stage boundaries enforced (Step 1 separate from Step 2/3)
-5. ✅ Code reduced 40%+ (less complexity)
-6. ✅ All transformations testable (pure functions)
-7. ✅ New developers understand flow in minutes
-
-This is a **data transformation pipeline**, not an object-oriented framework.
-
-## Progress Summary
-
-**Total Lines Removed**: ~885 lines (58% reduction)
-**Files Modified**: 5
-**Status**: Phases 0-4 Complete ✅
+This document reviews your schema-driven migration codebase and provides a **refactoring roadmap** to align with best-practice, production-grade, and sustainable software engineering. 
 
 ---
 
-## To-dos
+## 1. 🔍 Thorough Code Review (Key Findings)
 
-### Phase 0: Fix Critical Bugs ✅ COMPLETE
-- [x] Fix syntax error in discovery_queries.py (line 1193) - broken list comprehension
-- [x] Remove DEBUG print statements from discovery_queries.py
+### a) **Models & Serialization**
 
-### Phase 1: Fix Data Serialization ✅ COMPLETE
-- [x] Update schema_to_dataclass.py generator for proper enum handling in to_dict/from_dict
-- [x] Regenerate migration_models.py with improved serialization methods
-- [x] Verify round-trip serialization works (Config → JSON → Config)
+- **Current:** You have generated dataclasses from schema. Many `to_dict` and `from_dict` methods are already explicit, but some legacy or hand-written models may not be, and the generator may not always produce the most robust code for all edge cases (especially for enums, optionals, nested lists, and forward references).
+- **Risk:** If any model uses `asdict()` or `cls(**data)` for (de)serialization, there are bugs lurking—especially with enums and nested models.
 
-### Phase 2: Remove Architectural Violations ✅ COMPLETE
-- [x] Remove SchemaToDataclassGenerator from generate.py (~290 lines deleted)
-- [x] Remove SchemaRegenerationCommand from generate.py
-- [x] Remove --regenerate-schema CLI option
-- [x] Clean separation: Step 1 (schema_to_dataclass.py) separate from Steps 2-3 (generate.py)
+### b) **Validation**
 
-### Phase 3: Remove Code Duplication ✅ COMPLETE
-- [x] Delete duplicate get_template_filters() from template_filters.py (~120 lines)
-- [x] Remove duplicate dataclass definitions from environment_config.py (~35 lines)
-- [x] Import TablespaceConfig, SubpartitionDefaults, ParallelDefaults, EnvironmentConfig from migration_models
+- **Current:** There is a validator (`config_validator.py`) that uses `jsonschema` to validate the JSON config pre-load.
+- **Risk:** Not all entry points (e.g. direct file loads, command-line tools) may enforce validation before constructing model objects. Some code might pass dicts instead of dataclasses.
 
-### Phase 4: Simplify generate.py to Data Pipeline ✅ COMPLETE
-**Results**: generate.py simplified from 1026 → 606 lines (420 lines removed, 41% reduction)
+### c) **Templates & Application Logic**
 
-**Completed**:
-- [x] Delete duplicate GenerationCommand class (290 lines of schema generator code removed)
-- [x] Remove Command pattern - replaced MigrationCommand/DiscoveryCommand/ValidationCommand with simple functions
-- [x] Delete Protocol classes (DatabaseServiceProtocol, ConfigServiceProtocol, TemplateServiceProtocol)
-- [x] Remove MigrationScriptGenerator wrapper class
-- [x] Replace DiscoveryCommand.execute() with run_discovery() function
-- [x] Replace ValidationCommand.execute() with run_validation() function  
-- [x] Update main() to call functions directly instead of command pattern
-- [x] Fix indentation errors in _generate_table_scripts()
-- [x] Remove trailing whitespace (20+ instances fixed)
-- [x] Move module imports to top of file
-- [x] File compiles successfully
+- **Current:** Jinja2 templates receive a `context` which may still be a dict or a mixture of dict and dataclass objects.
+- **Risk:** Loss of type safety and potential for `KeyError` or silent bugs in templates. Dict access in templates is a code smell.
 
-**Remaining Services**: DatabaseService, ConfigService, TemplateService still use context managers and object patterns - keeping for now as they provide clean interfaces
+### d) **Discovery & Builder Layer**
 
-### Phase 5: Testing & Documentation 🔄 TODO
-- [ ] Create test_data_flow.sh for automated pipeline testing
-- [ ] Run full 4-step workflow test with real Oracle DB
-- [ ] Test discovery mode with sample schema
-- [ ] Test validation mode with config file
-- [ ] Test generation mode with complete workflow
-- [ ] Remove overlapping validation logic between ConfigValidator and MigrationValidator
-- [ ] Archive generate_old.py and generate_scripts copy.py to docs/backup/
-- [ ] Update .github/instructions/ to reflect simplified architecture
-- [ ] Add architectural diagram showing data pipeline flow
+- **Current:** Discovery code (e.g. `discovery_queries.py`) sometimes builds lists of dicts, then attempts to convert to dataclasses.
+- **Risk:** This is fragile and can drift from the schema; all builder code should return dataclass objects as soon as possible.
 
-## Next Steps
+### e) **Defensive Programming & Automation**
 
-1. **Phase 5 testing** - Run full workflow with real Oracle DB
-2. **Documentation** - Update instructions with simplified architecture
-3. **Cleanup** - Archive backup files
-4. **Validation** - Final end-to-end testing
+- **Current:** Models are generated, but automation to enforce schema drift (e.g. in CI) is not evident; not all code is fully type hinted.
+- **Risk:** Models can drift, bugs can creep in unnoticed, and future maintainers may break boundaries.
+
+---
+
+## 2. 🛠️ Refactor Plan (Explicit Steps)
+
+### 1. **Model Codegen: Always Explicit, Always Idempotent**
+
+- Ensure **every model** generated by `schema_to_dataclass.py` has explicit, field-by-field `to_dict` and `from_dict` methods (as in your latest generator, see below for the pattern).
+- Use `from __future__ import annotations` at the top for forward references.
+- Add a warning header:  
+  ```python
+  # THIS FILE IS AUTO-GENERATED. DO NOT EDIT MANUALLY!
+  # Edit enhanced_migration_schema.json and re-run codegen.
+  ```
+
+### 2. **Validation: Enforced at All Entrypoints**
+
+- **Before** deserializing JSON into model objects anywhere, **always** validate with `jsonschema`. 
+- Consider adding a `MigrationConfig.from_json_file(filename: str, validate: bool = True)` method that validates and then loads.
+
+### 3. **Discovery/Builder: Only Dataclasses**
+
+- Refactor any code that builds lists of dicts (e.g., `tables_config = []` with dicts) to instead build and return only dataclass objects.
+- For example, in `TableDiscovery._analyze_table`, return a `TableConfig` instance, never a dict.
+
+### 4. **Templates: Only Pass Typed Objects**
+
+- The template context should be made up **entirely** of dataclass objects, not dicts.
+- In `TemplateService`, ensure you always pass dataclasses to templates, and access in templates is always via attributes (e.g., `table.owner`), never keys.
+
+### 5. **Round-trip and Type Safety Testing**
+
+- Create a `tests/` directory. For each model, write a test:
+  ```python
+  def test_round_trip():
+      obj = ModelClass.factory_with_all_fields()  # Factory populates all fields
+      d = obj.to_dict()
+      obj2 = ModelClass.from_dict(d)
+      assert obj == obj2
+  ```
+- Add a test that loads a real config, validates it, and round-trips it.
+
+### 6. **Automation & CI**
+
+- Add a Makefile or script to regenerate models and run all tests.
+- Add pre-commit or GitHub Actions CI that:
+  - Validates all config files with the schema.
+  - Fails if generated models are out of date (compare with committed `migration_models.py`).
+  - Runs round-trip unit tests.
+
+### 7. **Type Hints & Documentation**
+
+- Ensure every class, method, and function has type hints and docstrings. This applies to both generated and hand-written code.
+
+---
+
+## 3. ⚡️ Example Refactored Model (Codegen Output)
+
+```python name=lib/migration_models.py
+# THIS FILE IS AUTO-GENERATED FROM enhanced_migration_schema.json
+# DO NOT EDIT MANUALLY! Edit the schema and regenerate.
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict, Any
+from enum import Enum
+import dataclasses
+
+class YesNoEnum(Enum):
+    YES = "YES"
+    NO = "NO"
+
+@dataclass
+class ColumnInfo:
+    name: str
+    type: str
+    nullable: YesNoEnum
+    details: Optional[Details]
+    history: List[HistoryItem]
+
+    def to_dict(self) -> dict:
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(x) for x in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        return {f: convert(getattr(self, f)) for f in self.__dataclass_fields__}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ColumnInfo":
+        if data is None:
+            return None
+        return cls(
+            name=data.get("name"),
+            type=data.get("type"),
+            nullable=YesNoEnum(data["nullable"]) if "nullable" in data and data["nullable"] is not None else None,
+            details=Details.from_dict(data["details"]) if "details" in data and data["details"] is not None else None,
+            history=[HistoryItem.from_dict(x) for x in data.get("history", [])],
+        )
+```
+
+---
+
+## 4. 📝 Example: Template Context (Jinja2)
+
+**Before:**
+```python
+context = {
+    "owner": table["owner"],
+    "current_state": table["current_state"],
+    ...
+}
+```
+
+**After:**  
+```python
+context = {
+    "table": table,  # TableConfig dataclass
+    "owner": table.owner,
+    "current_state": table.current_state,
+    ...
+}
+```
+**In Jinja:**  
+```jinja2
+{{ table.owner }}  # Always attribute access!
+{{ table.current_state.partition_type }}
+```
+
+---
+
+## 5. 🗂️ Example: Validation at Entry
+
+```python
+from jsonschema import validate, ValidationError
+from lib.migration_models import MigrationConfig
+
+def load_config(filename: str) -> MigrationConfig:
+    with open(filename) as f:
+        raw = json.load(f)
+    validate(instance=raw, schema=your_loaded_schema)
+    return MigrationConfig.from_dict(raw)
+```
+
+---
+
+## 6. 🛠️ Example: Enforced CI
+
+- Add a `Makefile`:
+  ```makefile
+  models:
+      python tools/schema_to_dataclass.py
+
+  test:
+      pytest tests/
+
+  check: models test
+  ```
+- In CI:
+  - Run `make check`
+  - Compare committed `migration_models.py` with generated version and fail if mismatched.
+
+---
+
+## 7. ✨ Summary Table
+
+| Task                      | Refactor Target                        | Rationale                                   |
+|---------------------------|----------------------------------------|---------------------------------------------|
+| Model (de)serialization   | Only explicit, generated methods       | No bugs from asdict/cls(**data)             |
+| Validation                | Always pre-load with schema            | Prevents bad configs, improves robustness   |
+| Discovery/builders        | Only return dataclasses                | Type safe, prevents drift                   |
+| Templates                 | Pass only dataclasses (not dicts)      | IDE help, no KeyError, future-proof         |
+| Testing                   | Round-trip, schema, end-to-end         | Catches schema/code drift                   |
+| Automation                | Makefile, pre-commit, CI               | Prevents manual errors                      |
+| Typing/docs               | All code type hinted, documented       | Maintainability, onboarding                 |
+
+---
+
+## 8. 🚀 Next Steps
+
+- Regenerate all models with explicit methods.
+- Refactor all builder/discovery code to use dataclasses only.
+- Ensure templates and main business logic never use dicts, only typed objects.
+- Add schema validation at every config load boundary.
+- Write round-trip and schema-conformance tests.
+- Lock down codegen and automate checks in CI.
+
+---
+
+> **Following this plan will deliver a robust, scalable, and sustainable schema-driven migration platform.**

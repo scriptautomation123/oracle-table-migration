@@ -53,6 +53,7 @@ except ImportError:
 from lib.config_validator import ConfigValidator  # noqa: E402
 from lib.discovery_queries import TableDiscovery  # noqa: E402
 from lib.template_filters import register_custom_filters  # noqa: E402
+from lib.migration_models import MigrationConfig, TableConfig  # noqa: E402
 
 
 # Constants
@@ -71,7 +72,6 @@ class Constants:
         "60_restore_grants.sql.j2",
         "70_drop_old_table.sql.j2",
         "master1.sql.j2",
-        "master2.sql.j2",
     ]
 
 
@@ -102,7 +102,7 @@ class TemplateError(MigrationError):
 
 # Data Classes
 @dataclass
-class MigrationConfig:
+class ApplicationConfig:
     """Configuration for migration operations"""
 
     connection_string: Optional[str] = None
@@ -457,7 +457,7 @@ class DiscoveryCommand(MigrationCommand):
 class ValidationCommand(MigrationCommand):
     """Validation mode command"""
 
-    def __init__(self, config: MigrationConfig, check_database: bool = False):
+    def __init__(self, config: ApplicationConfig, check_database: bool = False):
         self.config = config
         self.check_database = check_database
 
@@ -481,7 +481,7 @@ class ValidationCommand(MigrationCommand):
 class GenerationCommand(MigrationCommand):
     """Script generation mode command"""
 
-    def __init__(self, config: MigrationConfig, check_database: bool = False):
+    def __init__(self, config: ApplicationConfig, check_database: bool = False):
         self.config = config
         self.check_database = check_database
         self.stats = MigrationStats()
@@ -508,13 +508,16 @@ class GenerationCommand(MigrationCommand):
                 print("\n✗ Configuration validation failed")
                 return False
 
-            return self._generate_scripts(config_data, template_service)
+            # Convert dict to typed MigrationConfig object
+            typed_config = MigrationConfig.from_dict(config_data)
+
+            return self._generate_scripts(typed_config, template_service)
         except Exception as e:
             print(f"\n✗ Generation failed: {e}")
             return False
 
     def _generate_scripts(
-        self, config_data: Dict[str, Any], template_service: TemplateService
+        self, migration_config: MigrationConfig, template_service: TemplateService
     ) -> bool:
         """Generate migration scripts"""
         # Create output directory
@@ -523,14 +526,13 @@ class GenerationCommand(MigrationCommand):
         print(f"Output directory: {output_dir}")
 
         # Process each table
-        tables = config_data.get("tables", [])
-        enabled_tables = [t for t in tables if t.get("enabled", False)]
+        enabled_tables = [t for t in migration_config.tables if t.enabled]
 
         print(f"\nProcessing {len(enabled_tables)} enabled table(s)...\n")
 
         success_count = 0
         for idx, table_config in enumerate(enabled_tables, 1):
-            table_name = table_config.get("table_name", f"table_{idx}")
+            table_name = table_config.table_name
             print(f"[{idx}/{len(enabled_tables)}] Processing: {table_name}")
 
             try:
@@ -550,13 +552,13 @@ class GenerationCommand(MigrationCommand):
 
     def _generate_table_scripts(
         self,
-        table_config: Dict[str, Any],
+        table_config: TableConfig,
         template_service: TemplateService,
         output_dir: Path,
     ) -> bool:
         """Generate scripts for a single table"""
-        owner = table_config.get("owner")
-        table_name = table_config.get("table_name")
+        owner = table_config.owner
+        table_name = table_config.table_name
 
         # Create table-specific directory
         table_dir = output_dir / f"{owner}_{table_name}"
@@ -588,52 +590,50 @@ class GenerationCommand(MigrationCommand):
         print(f"  ✓ Generated {generated} scripts")
         return True
 
-    def _prepare_template_context(self, table_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare template context"""
-        owner = table_config.get("owner")
-        table_name = table_config.get("table_name")
-        target_config = table_config.get("target_configuration", {})
-        current_state = table_config.get("current_state", {})
-        available_cols = table_config.get("available_columns", {})
+    def _prepare_template_context(self, table_config: TableConfig) -> Dict[str, Any]:
+        """Prepare template context with typed dataclass access"""
+        # Use typed dataclass access throughout
+        owner = table_config.owner
+        table_name = table_config.table_name
+        target_config = table_config.common_settings.target_configuration
+        current_state = table_config.current_state
+        available_cols = table_config.current_state.available_columns
 
-        # Extract column information
-        timestamp_cols = [
-            c["name"] for c in available_cols.get("timestamp_columns", [])
-        ]
-        numeric_cols = [c["name"] for c in available_cols.get("numeric_columns", [])]
-        string_cols = [c["name"] for c in available_cols.get("string_columns", [])]
+        # Extract column information using typed attributes
+        timestamp_cols = [c.name for c in available_cols.timestamp_columns]
+        numeric_cols = [c.name for c in available_cols.numeric_columns]
+        string_cols = [c.name for c in available_cols.string_columns]
         all_columns = timestamp_cols + numeric_cols + string_cols
 
         return {
+            "table": table_config,  # Pass entire typed object for templates
             "owner": owner,
             "table_name": table_name,
-            "new_table_name": table_config.get("new_table_name", f"{table_name}_NEW"),
-            "old_table_name": table_config.get("old_table_name", f"{table_name}_OLD"),
+            "common_settings": table_config.common_settings,
+            "new_table_name": table_config.common_settings.new_table_name,
+            "old_table_name": table_config.common_settings.old_table_name,
             "target_configuration": target_config,
             "current_state": current_state,
-            "migration_action": table_config.get("migration_action"),
-            "migration_settings": table_config.get("migration_settings", {}),
-            "environment_config": table_config.get("environment_config", {}),
-            "columns": table_config.get("columns", []),
+            "migration_action": table_config.common_settings.migration_action,
+            "migration_settings": table_config.common_settings.migration_settings,
+            "columns": current_state.columns,
             "column_list": ", ".join(all_columns) if all_columns else "*",
-            "primary_key_columns": target_config.get(
-                "partition_column", all_columns[0] if all_columns else "ID"
-            ),
-            "lob_storage": table_config.get("lob_storage", []),
-            "storage_parameters": table_config.get("storage_parameters", {}),
-            "indexes": table_config.get("indexes", []),
+            "primary_key_columns": target_config.partition_column if target_config.partition_column else (all_columns[0] if all_columns else "ID"),
+            "lob_storage": current_state.lob_storage,
+            "storage_parameters": current_state.storage_parameters,
+            "indexes": current_state.indexes,
             "generation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "cutoff_timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "available_columns": available_cols,
         }
 
     def _generate_table_readme(
-        self, table_config: Dict[str, Any], table_dir: Path
+        self, table_config: TableConfig, table_dir: Path
     ) -> None:
         """Generate README for table migration scripts"""
         # Simplified README generation - could be extracted to a separate service
-        owner = table_config.get("owner")
-        table_name = table_config.get("table_name")
+        owner = table_config.owner
+        table_name = table_config.table_name
 
         readme_content = f"""# Migration Scripts: {owner}.{table_name}
 
@@ -674,7 +674,7 @@ sqlplus {owner}/password @master2.sql
 class MigrationScriptGenerator:
     """Main application class - simplified and focused"""
 
-    def __init__(self, config: MigrationConfig):
+    def __init__(self, config: ApplicationConfig):
         self.config = config
 
     def run(self, command: MigrationCommand) -> bool:
@@ -688,7 +688,7 @@ class MigrationScriptGenerator:
 
 def create_command(args: argparse.Namespace) -> MigrationCommand:
     """Factory function to create appropriate command"""
-    config = MigrationConfig(
+    config = ApplicationConfig(
         connection_string=args.connection,
         config_file=args.config,
         template_dir=args.template_dir,
@@ -775,7 +775,7 @@ def main() -> None:
 
     # Create and run command
     command = create_command(args)
-    generator = MigrationScriptGenerator(MigrationConfig())
+    generator = MigrationScriptGenerator(ApplicationConfig())
     success = generator.run(command)
 
     sys.exit(0 if success else 1)

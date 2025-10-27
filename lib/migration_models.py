@@ -2,15 +2,17 @@
 """
 Generated Migration Models
 =========================
-Auto-generated from migration_schema.json
-DO NOT EDIT MANUALLY - Use tools/schema_to_dataclass.py
+Auto-generated from enhanced_migration_schema.json
+DO NOT EDIT MANUALLY - Run: python3 src/schema_to_dataclass.py
 
-Generated: 2025-10-27 06:43:15
+Generated: 2025-10-27 07:36:03
 """
 
-from dataclasses import dataclass, field, asdict
+from __future__ import annotations
+
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 
 class PartitionTypeEnum(Enum):
     """PartitionTypeEnum enumeration"""
@@ -194,177 +196,6 @@ class Metadata:
 
 
 @dataclass
-class TablespaceConfig:
-    """Tablespace names for data and LOB storage"""
-    primary: str = None  # Primary tablespace for table data
-    lob: List[str] = field(default_factory=list)  # Array of LOB tablespaces
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TablespaceConfig":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            primary=data.get("primary"),
-            lob=data.get("lob", []),
-        )
-
-
-@dataclass
-class DataTablespaces:
-    """Tablespace configuration for data and LOB storage"""
-    data: TablespaceConfig = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DataTablespaces":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            data=TablespaceConfig.from_dict(data["data"]) if "data" in data and data["data"] is not None else None,
-        )
-
-
-@dataclass
-class SubpartitionDefaults:
-    """Default settings for subpartitioning"""
-    min_count: int = None  # Minimum subpartition count
-    max_count: int = None  # Maximum subpartition count
-    size_based_recommendations: Dict[str, Any] = field(default_factory=dict)  # Size-based subpartition recommendations
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SubpartitionDefaults":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            min_count=data.get("min_count"),
-            max_count=data.get("max_count"),
-            size_based_recommendations=data.get("size_based_recommendations"),
-        )
-
-
-@dataclass
-class ParallelDefaults:
-    """Default parallel execution settings"""
-    min_degree: int = None  # Minimum parallel degree
-    max_degree: int = None  # Maximum parallel degree
-    default_degree: int = None  # Default parallel degree
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ParallelDefaults":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            min_degree=data.get("min_degree"),
-            max_degree=data.get("max_degree"),
-            default_degree=data.get("default_degree"),
-        )
-
-
-@dataclass
-class EnvironmentConfig:
-    """Environment-specific configuration for tablespaces and defaults"""
-    name: str  # Environment name
-    tablespaces: DataTablespaces
-    subpartition_defaults: SubpartitionDefaults = None
-    parallel_defaults: ParallelDefaults = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EnvironmentConfig":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            name=data["name"],
-            tablespaces=DataTablespaces.from_dict(data["tablespaces"]) if "tablespaces" in data else None,
-            subpartition_defaults=SubpartitionDefaults.from_dict(data["subpartition_defaults"]) if "subpartition_defaults" in data and data["subpartition_defaults"] is not None else None,
-            parallel_defaults=ParallelDefaults.from_dict(data["parallel_defaults"]) if "parallel_defaults" in data and data["parallel_defaults"] is not None else None,
-        )
-
-
-@dataclass
 class MigrationSettings:
     """Migration execution and validation settings"""
     validate_data: bool = None  # Whether to validate data after migration
@@ -531,6 +362,155 @@ class CommonSettings:
 
 
 @dataclass
+class LobStorageInfo:
+    """LOB storage configuration for Oracle DDL"""
+    column_name: str  # LOB column name
+    tablespace_name: str  # LOB tablespace
+    segment_name: str = None  # LOB segment name
+    original_tablespace: str = None  # Original LOB tablespace
+    securefile: YesNoEnum = None
+    compression: YesNoEnum = None
+    deduplication: YesNoEnum = None
+    in_row: YesNoEnum = None
+    chunk: int = None  # LOB chunk size
+    cache: YesNoEnum = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "LobStorageInfo":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            column_name=data["column_name"],
+            segment_name=data.get("segment_name"),
+            tablespace_name=data["tablespace_name"],
+            original_tablespace=data.get("original_tablespace"),
+            securefile=YesNoEnum(data["securefile"]) if "securefile" in data and data["securefile"] is not None else None,
+            compression=YesNoEnum(data["compression"]) if "compression" in data and data["compression"] is not None else None,
+            deduplication=YesNoEnum(data["deduplication"]) if "deduplication" in data and data["deduplication"] is not None else None,
+            in_row=YesNoEnum(data["in_row"]) if "in_row" in data and data["in_row"] is not None else None,
+            chunk=data.get("chunk"),
+            cache=YesNoEnum(data["cache"]) if "cache" in data and data["cache"] is not None else None,
+        )
+
+
+@dataclass
+class StorageParameters:
+    """Oracle table storage parameters"""
+    compression: str = None  # Table compression setting
+    compress_for: str = None  # Compression type details
+    pct_free: int = None  # PCTFREE storage parameter
+    ini_trans: int = None  # INITRANS storage parameter
+    max_trans: int = None  # MAXTRANS storage parameter
+    initial_extent: Optional[int] = None  # Initial extent size in bytes
+    next_extent: Optional[int] = None  # Next extent size in bytes
+    buffer_pool: str = None  # Buffer pool assignment
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "StorageParameters":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            compression=data.get("compression", "DISABLED"),
+            compress_for=data.get("compress_for"),
+            pct_free=data.get("pct_free", 10),
+            ini_trans=data.get("ini_trans", 1),
+            max_trans=data.get("max_trans", 255),
+            initial_extent=data.get("initial_extent"),
+            next_extent=data.get("next_extent"),
+            buffer_pool=data.get("buffer_pool", "DEFAULT"),
+        )
+
+
+@dataclass
+class IndexInfo:
+    """Oracle index definition with storage details"""
+    index_name: str  # Index name
+    index_type: str  # Oracle index type
+    columns: str  # Comma-separated list of index columns
+    uniqueness: str = None  # Index uniqueness
+    tablespace_name: str = None  # Index tablespace
+    compression: str = None  # Index compression
+    pct_free: int = None  # Index PCTFREE
+    ini_trans: int = None  # Index INITRANS
+    max_trans: int = None  # Index MAXTRANS
+    degree: str = None  # Parallel degree for index operations
+    partitioned: YesNoEnum = None
+    is_reverse: bool = None  # Whether index is reverse key
+    locality: Optional[str] = None  # Partitioned index locality
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "IndexInfo":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            index_name=data["index_name"],
+            index_type=data["index_type"],
+            uniqueness=data.get("uniqueness"),
+            tablespace_name=data.get("tablespace_name"),
+            compression=data.get("compression"),
+            pct_free=data.get("pct_free"),
+            ini_trans=data.get("ini_trans"),
+            max_trans=data.get("max_trans"),
+            degree=data.get("degree"),
+            partitioned=YesNoEnum(data["partitioned"]) if "partitioned" in data and data["partitioned"] is not None else None,
+            columns=data["columns"],
+            is_reverse=data.get("is_reverse", False),
+            locality=data.get("locality"),
+        )
+
+
+@dataclass
 class ColumnInfo:
     """Complete column metadata for Oracle DDL generation"""
     name: str  # Column name
@@ -601,155 +581,6 @@ class ColumnInfo:
             identity_cache_size=data.get("identity_cache_size"),
             identity_cycle_flag=data.get("identity_cycle_flag"),
             identity_order_flag=data.get("identity_order_flag"),
-        )
-
-
-@dataclass
-class StorageParameters:
-    """Oracle table storage parameters"""
-    compression: str = None  # Table compression setting
-    compress_for: str = None  # Compression type details
-    pct_free: int = None  # PCTFREE storage parameter
-    ini_trans: int = None  # INITRANS storage parameter
-    max_trans: int = None  # MAXTRANS storage parameter
-    initial_extent: Optional[int] = None  # Initial extent size in bytes
-    next_extent: Optional[int] = None  # Next extent size in bytes
-    buffer_pool: str = None  # Buffer pool assignment
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "StorageParameters":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            compression=data.get("compression", "DISABLED"),
-            compress_for=data.get("compress_for"),
-            pct_free=data.get("pct_free", 10),
-            ini_trans=data.get("ini_trans", 1),
-            max_trans=data.get("max_trans", 255),
-            initial_extent=data.get("initial_extent"),
-            next_extent=data.get("next_extent"),
-            buffer_pool=data.get("buffer_pool", "DEFAULT"),
-        )
-
-
-@dataclass
-class LobStorageInfo:
-    """LOB storage configuration for Oracle DDL"""
-    column_name: str  # LOB column name
-    tablespace_name: str  # LOB tablespace
-    segment_name: str = None  # LOB segment name
-    original_tablespace: str = None  # Original LOB tablespace
-    securefile: YesNoEnum = None
-    compression: YesNoEnum = None
-    deduplication: YesNoEnum = None
-    in_row: YesNoEnum = None
-    chunk: int = None  # LOB chunk size
-    cache: YesNoEnum = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "LobStorageInfo":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            column_name=data["column_name"],
-            segment_name=data.get("segment_name"),
-            tablespace_name=data["tablespace_name"],
-            original_tablespace=data.get("original_tablespace"),
-            securefile=YesNoEnum(data["securefile"]) if "securefile" in data and data["securefile"] is not None else None,
-            compression=YesNoEnum(data["compression"]) if "compression" in data and data["compression"] is not None else None,
-            deduplication=YesNoEnum(data["deduplication"]) if "deduplication" in data and data["deduplication"] is not None else None,
-            in_row=YesNoEnum(data["in_row"]) if "in_row" in data and data["in_row"] is not None else None,
-            chunk=data.get("chunk"),
-            cache=YesNoEnum(data["cache"]) if "cache" in data and data["cache"] is not None else None,
-        )
-
-
-@dataclass
-class IndexInfo:
-    """Oracle index definition with storage details"""
-    index_name: str  # Index name
-    index_type: str  # Oracle index type
-    columns: str  # Comma-separated list of index columns
-    uniqueness: str = None  # Index uniqueness
-    tablespace_name: str = None  # Index tablespace
-    compression: str = None  # Index compression
-    pct_free: int = None  # Index PCTFREE
-    ini_trans: int = None  # Index INITRANS
-    max_trans: int = None  # Index MAXTRANS
-    degree: str = None  # Parallel degree for index operations
-    partitioned: YesNoEnum = None
-    is_reverse: bool = None  # Whether index is reverse key
-    locality: Optional[str] = None  # Partitioned index locality
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
-        import dataclasses
-        def convert(val):
-            if isinstance(val, Enum):
-                return val.value
-            elif dataclasses.is_dataclass(val):
-                return val.to_dict()
-            elif isinstance(val, list):
-                return [convert(v) for v in val]
-            elif isinstance(val, dict):
-                return {k: convert(v) for k, v in val.items()}
-            else:
-                return val
-        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
-        return result
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "IndexInfo":
-        """Create instance from dictionary with proper type conversions"""
-        if data is None:
-            return None
-        return cls(
-            index_name=data["index_name"],
-            index_type=data["index_type"],
-            uniqueness=data.get("uniqueness"),
-            tablespace_name=data.get("tablespace_name"),
-            compression=data.get("compression"),
-            pct_free=data.get("pct_free"),
-            ini_trans=data.get("ini_trans"),
-            max_trans=data.get("max_trans"),
-            degree=data.get("degree"),
-            partitioned=YesNoEnum(data["partitioned"]) if "partitioned" in data and data["partitioned"] is not None else None,
-            columns=data["columns"],
-            is_reverse=data.get("is_reverse", False),
-            locality=data.get("locality"),
         )
 
 
@@ -891,6 +722,177 @@ class TableConfig:
             table_name=data["table_name"],
             current_state=CurrentState.from_dict(data["current_state"]) if "current_state" in data else None,
             common_settings=CommonSettings.from_dict(data["common_settings"]) if "common_settings" in data else None,
+        )
+
+
+@dataclass
+class SubpartitionDefaults:
+    """Default settings for subpartitioning"""
+    min_count: int = None  # Minimum subpartition count
+    max_count: int = None  # Maximum subpartition count
+    size_based_recommendations: Dict[str, Any] = field(default_factory=dict)  # Size-based subpartition recommendations
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SubpartitionDefaults":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            min_count=data.get("min_count"),
+            max_count=data.get("max_count"),
+            size_based_recommendations=data.get("size_based_recommendations"),
+        )
+
+
+@dataclass
+class ParallelDefaults:
+    """Default parallel execution settings"""
+    min_degree: int = None  # Minimum parallel degree
+    max_degree: int = None  # Maximum parallel degree
+    default_degree: int = None  # Default parallel degree
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ParallelDefaults":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            min_degree=data.get("min_degree"),
+            max_degree=data.get("max_degree"),
+            default_degree=data.get("default_degree"),
+        )
+
+
+@dataclass
+class TablespaceConfig:
+    """Tablespace names for data and LOB storage"""
+    primary: str = None  # Primary tablespace for table data
+    lob: List[str] = field(default_factory=list)  # Array of LOB tablespaces
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TablespaceConfig":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            primary=data.get("primary"),
+            lob=data.get("lob", []),
+        )
+
+
+@dataclass
+class DataTablespaces:
+    """Tablespace configuration for data and LOB storage"""
+    data: TablespaceConfig = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DataTablespaces":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            data=TablespaceConfig.from_dict(data["data"]) if "data" in data and data["data"] is not None else None,
+        )
+
+
+@dataclass
+class EnvironmentConfig:
+    """Environment-specific configuration for tablespaces and defaults"""
+    name: str  # Environment name
+    tablespaces: DataTablespaces
+    subpartition_defaults: SubpartitionDefaults = None
+    parallel_defaults: ParallelDefaults = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization - explicit recursive conversion"""
+        import dataclasses
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}
+        return result
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EnvironmentConfig":
+        """Create instance from dictionary with proper type conversions"""
+        if data is None:
+            return None
+        return cls(
+            name=data["name"],
+            tablespaces=DataTablespaces.from_dict(data["tablespaces"]) if "tablespaces" in data else None,
+            subpartition_defaults=SubpartitionDefaults.from_dict(data["subpartition_defaults"]) if "subpartition_defaults" in data and data["subpartition_defaults"] is not None else None,
+            parallel_defaults=ParallelDefaults.from_dict(data["parallel_defaults"]) if "parallel_defaults" in data and data["parallel_defaults"] is not None else None,
         )
 
 

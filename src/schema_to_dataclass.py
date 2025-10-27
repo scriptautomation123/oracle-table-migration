@@ -167,8 +167,8 @@ class SchemaToDataclassGenerator:
     def _generate_dataclass(self, class_name: str, definition: Dict) -> None:
         """Generate a dataclass with the given exact class name"""
         imports = {
-            "from dataclasses import dataclass, field, asdict",
-            "from typing import List, Optional, Dict, Any, Union",
+            "from dataclasses import dataclass, field",
+            "from typing import List, Optional, Dict, Any",
             "from enum import Enum",
         }
 
@@ -477,11 +477,13 @@ class SchemaToDataclassGenerator:
         content.append('"""')
         content.append("Generated Migration Models")
         content.append("=" * 25)
-        content.append("Auto-generated from migration_schema.json")
-        content.append("DO NOT EDIT MANUALLY - Use tools/schema_to_dataclass.py")
+        content.append("Auto-generated from enhanced_migration_schema.json")
+        content.append("DO NOT EDIT MANUALLY - Run: python3 src/schema_to_dataclass.py")
         content.append("")
         content.append(f'Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
         content.append('"""')
+        content.append("")
+        content.append("from __future__ import annotations")
         content.append("")
 
         # Collect all imports
