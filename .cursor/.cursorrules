@@ -1,0 +1,294 @@
+# Oracle Table Migration - Cursor Rules
+
+## Core Development Principle
+**"it should just run master1.sql, nothing else should be required"**
+
+All development decisions must support this goal. Any table re-partitioning migration must be completable by executing only the master1.sql script with zero manual intervention.
+
+## Tool Purpose
+Migrate existing partitioned Oracle tables to differently partitioned tables:
+1. Create `table_new` with different partitioning strategy
+2. Optional data migration with dynamic constraint disabling/enabling
+3. Delta loads configurable by partition key (last day/hour)
+4. Atomic rename operations: `table → table_old; table_new → table`
+5. Validation and cleanup with zero manual intervention
+
+## CRITICAL: Schema-Driven Architecture
+
+### Data Flow Architecture (ENFORCED)
+The ONLY acceptable data flow through the system:
+```
+Schema (enhanced_migration_schema.json) → Models (migration_models.py) → 
+Config (migration_config.json) → Code (Templates → SQL)
+```
+
+This flow is enforced at every step. Never bypass this architecture.
+
+### Single Source of Truth
+- `lib/enhanced_migration_schema.json` is the ONLY source of truth
+- NEVER manually create data structures not in the schema
+- ALWAYS update schema first, then regenerate models
+
+### Type Safety Rules
+- NEVER work with `Dict[str, Any]` internally
+- ALWAYS use typed dataclasses (`TableConfig`, `MigrationConfig`, etc.)
+- ONLY serialize/deserialize at boundaries (file I/O)
+
+### Schema Workflow
+```bash
+# 1. Edit schema
+vim lib/enhanced_migration_schema.json
+
+# 2. Regenerate models
+python src/schema_to_dataclass.py
+
+# 3. Update discovery/generation to use typed objects
+```
+
+### Code Patterns
+```python
+# ❌ WRONG
+config = {"metadata": {...}, "tables": [...]}
+table_dict.get("owner")  # Can return None
+
+# ✅ RIGHT
+config = MigrationConfig(metadata=..., tables=...)
+config = MigrationConfig.from_json_file("config.json")
+table.owner  # Type-safe, IDE support
+```
+
+## Discovery-Driven Workflow (Mandatory)
+
+### Real Database Required
+- NO mocking or pre-existing configs allowed
+- Config must be generated from real database discovery
+- Discovery validation hash ensures config integrity
+
+### Discovery Command
+```bash
+python3 src/generate.py --discover --schema SCHEMA --connection "conn_string" --output-file migration_config.json
+```
+
+### Generation Command
+```bash
+python3 src/generate.py --config migration_config.json
+```
+
+## Essential File Organization
+
+### Primary Scripts
+- **src/generate.py**: UNIFIED ENTRY POINT (discovery + generation)
+- **src/generate_scripts.py**: Reference implementation (complete discovery architecture)
+- **lib/discovery_queries.py**: TableDiscovery class (database-driven schema analysis)
+- **lib/migration_models.py**: Typed dataclasses from schema
+- **templates/master1.sql.j2**: Complete migration template
+
+### Test Framework
+- **scripts/tdd-migration-loop.sh**: 7-phase TDD automation
+- **scripts/final-migration-test.sh**: Ultimate master1.sql validation
+- **test/data/comprehensive_oracle_ddl.sql**: Complete Oracle feature test schema
+
+## Development Workflow
+
+### Before ANY Code Changes
+1. Read `.github/instructions/current_status.instructions.md`
+2. Run `./scripts/tdd-migration-loop.sh --validate-only`
+3. Follow TDD process
+
+### Adding Oracle Features
+1. Add to `test/data/comprehensive_oracle_ddl.sql`
+2. Update `lib/discovery_queries.py` detection logic
+3. Enhance `lib/migration_models.py` enums/dataclasses
+4. Update `templates/master1.sql.j2` with new functionality
+5. Test with TDD loop until final validation passes
+
+### When Fixing Re-Partitioning Issues
+1. Identify gap in `templates/master1.sql.j2`
+2. Enhance template with missing functionality
+3. Run `./scripts/final-migration-test.sh` until it passes
+4. Never add manual steps - fix the template instead
+
+### E2E Testing Framework
+
+### Test Runner Architecture
+The E2E test framework implements the complete data flow:
+```
+Schema → Models → Discovery → JSON → Generation → SQL → Execution
+```
+
+### Running E2E Tests
+```bash
+# Basic usage
+python3 test/test_runner.py --connection "user/pass@host:port/service" --schema SCHEMA
+
+# With environment variables
+export ORACLE_CONN="system/oracle123@localhost:1521/FREEPDB1"
+export ORACLE_SCHEMA="APP_DATA_OWNER"
+python3 test/test_runner.py
+
+# Skip schema setup for iterative testing
+python3 test/test_runner.py --skip-schema-setup
+
+# Different modes
+python3 test/test_runner.py --mode dev  # Keep all artifacts
+python3 test/test_runner.py --mode test # Cleanup on success
+python3 test/test_runner.py --mode prod # Strict validation
+```
+
+### Test Output Structure
+Every test creates a timestamped directory:
+```
+output/run_YYYYMMDD_HHMMSS_{mode}_test/
+├── 00_schema_setup/        # DDL execution logs
+├── 01_discovery/           # Config JSON and discovery logs
+├── 02_generation/          # Generated SQL files
+├── 03_execution/           # Execution logs
+├── 04_validation/          # Validation results
+├── test_report.json        # Machine-readable report
+└── test_report.md          # Human-readable report
+```
+
+### Testing Requirements
+```bash
+# Full E2E test (with database)
+python3 test/test_runner.py --connection "$ORACLE_CONN" --schema APP_DATA_OWNER
+
+# Quick validation (no database)
+./scripts/tdd-migration-loop.sh --generate-only --verbose
+
+# Legacy bash scripts
+./scripts/tdd-migration-loop.sh --connection my_oracle_db
+./scripts/final-migration-test.sh --connection my_oracle_db
+```
+
+## Template System Rules
+
+### master1.sql.j2 Structure
+- Step 00: Disable constraints (if data migration)
+- Step 10: Create new partitioned table
+- Step 20: Data migration (conditional)
+- Step 30: Create indexes
+- Step 40: Delta loads (conditional, configurable by partition key)
+- Step 50: Atomic table swap (transaction-based)
+- Step 60: Restore grants
+- Step 70: Drop old table (separate script, NOT part of master1.sql)
+- Step 80: Enable constraints (if disabled)
+
+### Template Context
+- Pass typed objects to templates, not dicts
+- Use `{{ table.current_state.columns }}` not `{{ columns }}`
+- All properties are type-safe
+
+### Atomic Swap Implementation
+```sql
+-- NOT a true atomic operation, but made atomic by ensuring both renames succeed OR both fail
+ALTER TABLE table RENAME TO table_old;      -- Step 1
+ALTER TABLE table_new RENAME TO table;      -- Step 2
+-- If Step 2 fails, rollback Step 1 immediately
+```
+
+## Data Model Guidelines
+
+### Use Python Dataclasses
+- Implement enums for constrained values
+- Provide serialization methods (to_dict/from_dict)
+- Validate all inputs using JSON schema
+- Support all Oracle partition types and constraint combinations
+
+### Discovery Query Patterns
+- Always use parameterized queries (bind variables)
+- Validate Oracle identifiers (proper schema.table patterns)
+- Handle all constraint types: PK, FK, UK, CK
+- Detect composite and function-based indexes
+- Capture grants dynamically
+- Use context managers for connections
+
+## Critical Success Criteria
+
+### Discovery Working When:
+- ✅ Connects to real Oracle database successfully
+- ✅ Generates complete JSON config with all table metadata
+- ✅ Includes discovery validation hash in config
+- ✅ Captures constraints, indexes, grants, partitioning details
+
+### Generation Working When:
+- ✅ Templates render without errors using discovered data
+- ✅ master1.sql contains complete workflow with conditional logic
+- ✅ All table directories created with proper file structure
+- ✅ README files generated with migration instructions
+
+### End-to-End Working When:
+- ✅ Discovery → Generation → Execution works without manual intervention
+- ✅ master1.sql runs completely automated
+- ✅ All data migrated correctly (if enabled)
+- ✅ All constraints and indexes recreated
+- ✅ Grants restored from captured metadata
+
+## Database Integration
+
+### Connection Requirements
+- Oracle client libraries required (oracledb package)
+- Real Oracle database required - no mocking
+- SYSDBA authentication supported
+- Connection string format: `"sys/oracle123@localhost:1521/freepdb1"`
+
+### Supported Features
+- All Oracle partitioning: Range, List, Hash, Interval, Composite
+- All constraint types: PK, FK, UK, CK with referential integrity
+- All index types: Simple, composite, function-based, bitmap
+- Grants capture and restoration
+
+## Error Handling
+
+### Templates Must
+- Include rollback capabilities
+- Validate prerequisites
+- Provide clear error messages with actionable guidance
+
+### Scripts Must
+- Validate prerequisites before operations
+- Use proper logging throughout
+- Implement proper exception handling
+
+## Code Quality Standards
+
+### Never
+- Work with dicts internally (use typed objects)
+- Bypass the schema (single source of truth)
+- Add manual intervention steps
+- Mock database connections in production code
+
+### Always
+- Use typed dataclasses from migration_models.py
+- Test with TDD loop before committing
+- Update instruction files when workflows change
+- Run final validation before considering changes complete
+
+## Quick Commands Reference
+
+```bash
+# 1. Evolve schema and dataclasses
+python3 src/schema_to_dataclass.py
+
+# 2. Create config from real Oracle schema
+python3 src/generate.py --discover --schema APP_DATA_OWNER --connection "system/oracle123@localhost:1521/FREEPDB1"
+
+# 3. Generate DDL from config
+python3 src/generate.py --config output/run_*/01_discovery/config.json
+
+# 4. Run generated DDL
+sqlcl user/pass@database @output/SCHEMA_TABLE/master1.sql
+
+# Or run full E2E test
+python3 test/test_runner.py --connection "user/pass@host:port/service" --schema SCHEMA
+
+# Legacy bash scripts
+./scripts/tdd-migration-loop.sh --connection my_oracle_db
+./scripts/final-migration-test.sh --connection my_oracle_db
+```
+
+## Documentation Files
+- `.github/instructions/` - All project documentation
+- Start with `master_instructions_simplified.instructions.md`
+- See `quick_reference.instructions.md` for commands
+- See `current_status.instructions.md` for latest status

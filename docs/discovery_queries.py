@@ -22,11 +22,11 @@ from .environment_config import EnvironmentConfigManager
 from .migration_models import (
     MigrationConfig, TableConfig, CurrentState, CommonSettings,
     TargetConfiguration, MigrationSettings, ColumnInfo, LobStorageInfo,
-    StorageParameters, IndexInfo, AvailableColumns, Metadata, 
+    StorageParameters, IndexInfo, GrantInfo, AvailableColumns, Metadata, 
     EnvironmentConfig, DataTablespaces, TablespaceConfig,
-    SubpartitionDefaults, ParallelDefaults, SizeRecommendation,
-    ConnectionDetails, PartitionTypeEnum, IntervalTypeEnum, 
-    MigrationActionEnum, YesNoEnum, SubpartitionTypeEnum
+    SubpartitionDefaults, SizeRecommendation, ParallelDefaults,
+    ConnectionDetails, PartitionType, IntervalType, SubpartitionType,
+    MigrationAction
 )
 
 
@@ -79,7 +79,6 @@ class TableDiscovery:
 
         # Step 2: Get partition information
         partition_info = self._get_partition_info()
-        actual_partition_counts = self._get_actual_partition_counts()
         print("✓ Analyzed partition status")
 
         # Step 3: Get table sizes and stats
@@ -109,7 +108,6 @@ class TableDiscovery:
                 table_stats.get(table_name, {}),
                 lob_counts.get(table_name, 0),
                 index_counts.get(table_name, 0),
-                actual_partition_counts,
             )
             tables_config.append(table_config)
             print(f"  • {table_name}: {table_config.common_settings.migration_action}")
@@ -229,28 +227,6 @@ class TableDiscovery:
 
         cursor.close()
         return partition_info
-    
-    def _get_actual_partition_counts(self) -> Dict[str, int]:
-        """Get actual partition counts by counting existing partitions"""
-        cursor = self.connection.cursor()
-        
-        query = """
-            SELECT 
-                table_name,
-                COUNT(*) as actual_partition_count
-            FROM all_tab_partitions
-            WHERE table_owner = :schema
-            GROUP BY table_name
-        """
-        
-        cursor.execute(query, schema=self.schema)
-        
-        partition_counts = {}
-        for row in cursor.fetchall():
-            partition_counts[row[0]] = row[1]
-            
-        cursor.close()
-        return partition_counts
 
     def _get_partition_keys(self, table_name: str) -> List[str]:
         """Get partition key columns for a table"""
@@ -571,7 +547,6 @@ class TableDiscovery:
 
             # Check if this is an identity column
             identity_info = identity_map.get(col_name)
-            is_identity_value = False if identity_info is None else True
             
             column_info = {
                 "name": col_name,
@@ -584,7 +559,7 @@ class TableDiscovery:
                     str(data_default).strip() if data_default is not None else None
                 ),
                 "char_length": char_length,
-                "is_identity": is_identity_value,
+                "is_identity": identity_info is not None,
             }
             
             # Add identity column details if present
@@ -600,22 +575,9 @@ class TableDiscovery:
                     "identity_cycle_flag": identity_info.get('cycle_flag', 'N'),
                     "identity_order_flag": identity_info.get('order_flag', 'N'),
                 })
-            else:
-                # Add default identity fields for non-identity columns
-                column_info.update({
-                    "identity_generation": None,
-                    "identity_sequence": None,
-                    "identity_start_with": None,
-                    "identity_increment_by": None,
-                    "identity_max_value": None,
-                    "identity_min_value": None,
-                    "identity_cache_size": None,
-                    "identity_cycle_flag": None,
-                    "identity_order_flag": None,
-                })
-            
+
             columns.append(column_info)
-        
+
         cursor.close()
         return columns
 
@@ -677,14 +639,14 @@ class TableDiscovery:
 
         query = """
             SELECT
-                NVL(compression, 'DISABLED') as compression,
-                NVL(compress_for, '') as compress_for,
-                NVL(pct_free, 10) as pct_free,
-                NVL(ini_trans, 1) as ini_trans,
-                NVL(max_trans, 255) as max_trans,
+                compression,
+                compress_for,
+                pct_free,
+                ini_trans,
+                max_trans,
                 initial_extent,
                 next_extent,
-                NVL(buffer_pool, 'DEFAULT') as buffer_pool
+                buffer_pool
             FROM all_tables
             WHERE owner = :schema
               AND table_name = :table_name
@@ -736,12 +698,12 @@ class TableDiscovery:
                 i.index_name,
                 i.index_type,
                 i.uniqueness,
-                NVL(i.tablespace_name, 'USERS') as tablespace_name,
-                NVL(i.compression, 'DISABLED') as compression,
-                NVL(i.pct_free, 10) as pct_free,
-                NVL(i.ini_trans, 2) as ini_trans,
-                NVL(i.max_trans, 255) as max_trans,
-                NVL(i.degree, '1') as degree,
+                i.tablespace_name,
+                i.compression,
+                i.pct_free,
+                i.ini_trans,
+                i.max_trans,
+                i.degree,
                 i.partitioned
             FROM all_indexes i
             WHERE i.table_owner = :schema
@@ -811,7 +773,6 @@ class TableDiscovery:
         stats: Dict,
         lob_count: int,
         index_count: int,
-        actual_partition_counts: Dict[str, int],
     ) -> TableConfig:
         """
         Analyze a single table and generate migration configuration
@@ -863,22 +824,28 @@ class TableDiscovery:
         current_state = {
             "is_partitioned": is_partitioned,
             "partition_type": current_partition_type,
-            "is_interval": is_interval if is_partitioned else False,
-            "interval_definition": (partition_info.get("interval_definition") or "") if partition_info else "",
-            "current_partition_count": actual_partition_counts.get(table_name, 0) if is_partitioned else 0,
-            "current_partition_key": (
-                ", ".join(partition_key_columns) if partition_key_columns and is_partitioned else ""
-            ),
-            "has_subpartitions": has_subpartitions if is_partitioned else False,
-            "subpartition_type": (partition_info.get("subpartitioning_type") or "NONE") if partition_info else "NONE",
-            "subpartition_count": partition_info.get("def_subpartition_count", 0) if is_partitioned and partition_info else 0,
             "size_gb": size_gb,
             "row_count": stats.get("num_rows", 0),
             "lob_count": lob_count,
             "index_count": index_count,
         }
 
-
+        if is_partitioned:
+            current_state.update(
+                {
+                    "is_interval": is_interval,
+                    "interval_definition": partition_info.get("interval_definition"),
+                    "current_partition_count": partition_info.get("partition_count"),
+                    "current_partition_key": (
+                        ", ".join(partition_key_columns)
+                        if partition_key_columns
+                        else None
+                    ),
+                    "has_subpartitions": has_subpartitions,
+                    "subpartition_type": partition_info.get("subpartitioning_type"),
+                    "subpartition_count": partition_info.get("def_subpartition_count"),
+                }
+            )
 
         # Determine recommended settings
         recommended_hash_count = self._recommend_hash_count(
@@ -978,13 +945,6 @@ class TableDiscovery:
         current_state_obj = CurrentState(
             is_partitioned=current_state["is_partitioned"],
             partition_type=current_state["partition_type"],
-            is_interval=current_state["is_interval"],
-            interval_definition=current_state["interval_definition"],
-            current_partition_count=current_state["current_partition_count"],
-            current_partition_key=current_state["current_partition_key"],
-            has_subpartitions=current_state["has_subpartitions"],
-            subpartition_type=current_state["subpartition_type"],
-            subpartition_count=current_state["subpartition_count"],
             size_gb=current_state["size_gb"],
             row_count=current_state["row_count"],
             lob_count=current_state["lob_count"],
@@ -997,16 +957,26 @@ class TableDiscovery:
             grants=grants_details,
         )
 
-
+        # Add optional fields if partitioned
+        if is_partitioned:
+            current_state_obj.is_interval = is_interval
+            current_state_obj.interval_definition = partition_info.get("interval_definition")
+            current_state_obj.current_partition_count = partition_info.get("partition_count")
+            current_state_obj.current_partition_key = (
+                ", ".join(partition_key_columns) if partition_key_columns else None
+            )
+            current_state_obj.has_subpartitions = has_subpartitions
+            current_state_obj.subpartition_type = partition_info.get("subpartitioning_type")
+            current_state_obj.subpartition_count = partition_info.get("def_subpartition_count")
 
         # Build typed target configuration
         target_config_obj = TargetConfiguration(
-            partition_type=PartitionTypeEnum(target_configuration["partition_type"]),
+            partition_type=PartitionType(target_configuration["partition_type"]),
             partition_column=target_configuration["partition_column"],
-            interval_type=IntervalTypeEnum(target_configuration["interval_type"]),
+            interval_type=IntervalType(target_configuration["interval_type"]),
             interval_value=target_configuration["interval_value"],
             initial_partition_value=target_configuration["initial_partition_value"],
-            subpartition_type=SubpartitionTypeEnum(target_configuration["subpartition_type"]),
+            subpartition_type=SubpartitionType(target_configuration["subpartition_type"]),
             subpartition_column=target_configuration["subpartition_column"],
             subpartition_count=target_configuration["subpartition_count"],
             tablespace=target_configuration["tablespace"],
@@ -1025,7 +995,7 @@ class TableDiscovery:
         common_settings_obj = CommonSettings(
             new_table_name=f"{table_name}_NEW",
             old_table_name=f"{table_name}_OLD",
-            migration_action=MigrationActionEnum(migration_action),
+            migration_action=MigrationAction(migration_action),
             target_configuration=target_config_obj,
             migration_settings=migration_settings_obj,
         )
@@ -1239,17 +1209,17 @@ class TableDiscovery:
             for idx in raw_indexes
         ]
 
-    def _build_grants_details(self, table_name: str) -> List[Dict]:
-        """Build grants details as dictionaries"""  
+    def _build_grants_details(self, table_name: str) -> List[GrantInfo]:
+        """Build typed grants details"""  
         raw_grants = self._get_table_grants(table_name)
         return [
-            {
-                "grantee": grant["grantee"],
-                "privilege": grant["privilege"],
-                "grantable": grant["grantable"],
-                "grantor": grant["grantor"],
-                "grant_type": grant["grant_type"],
-            }
+            GrantInfo(
+                grantee=grant["grantee"],
+                privilege=grant["privilege"],
+                grantable=grant["grantable"],
+                grantor=grant["grantor"],
+                grant_type=grant["grant_type"],
+            )
             for grant in raw_grants
         ]
 
@@ -1515,12 +1485,12 @@ class TableDiscovery:
             i.index_name,
             i.index_type,
             i.uniqueness,
-            NVL(i.tablespace_name, 'USERS') as tablespace_name,
-            NVL(i.compression, 'DISABLED') as compression,
-            NVL(i.pct_free, 10) as pct_free,
-            NVL(i.ini_trans, 2) as ini_trans,
-            NVL(i.max_trans, 255) as max_trans,
-            NVL(i.degree, '1') as degree,
+            i.tablespace_name,
+            i.compression,
+            i.pct_free,
+            i.ini_trans,
+            i.max_trans,
+            i.degree,
             i.partitioned,
             LISTAGG(
                 CASE 

@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from jsonschema import validate, ValidationError, Draft7Validator
-from .migration_models import MigrationConfig, TableConfig
+# from .migration_models import MigrationConfig, TableConfig  # Temporarily commented for regeneration
 
 try:
     from jsonschema import ValidationError, validate

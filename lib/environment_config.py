@@ -8,46 +8,16 @@ Handles tablespace selection, subpartition counts, and environment detection.
 
 import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
-@dataclass
-class TablespaceConfig:
-    """Tablespace configuration for an environment"""
-
-    primary: str
-    lob: List[str]
-
-
-@dataclass
-class SubpartitionDefaults:
-    """Subpartition count defaults for an environment"""
-
-    min_count: int
-    max_count: int
-    size_based_recommendations: Dict[str, Dict[str, Any]]
-
-
-@dataclass
-class ParallelDefaults:
-    """Parallel degree defaults for an environment"""
-
-    min_degree: int
-    max_degree: int
-    default_degree: int
-
-
-@dataclass
-class EnvironmentConfig:
-    """Complete environment configuration"""
-
-    environment: str
-    description: str
-    tablespaces: TablespaceConfig
-    subpartition_defaults: SubpartitionDefaults
-    parallel_defaults: ParallelDefaults
+# Import dataclasses from generated models (single source of truth)
+from lib.migration_models import (
+    TablespaceConfig,
+    SubpartitionDefaults,
+    ParallelDefaults,
+    EnvironmentConfig
+)
 
 
 class EnvironmentConfigManager:

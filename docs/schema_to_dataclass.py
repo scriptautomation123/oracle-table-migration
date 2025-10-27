@@ -52,54 +52,32 @@ class SchemaToDataclassGenerator:
         with open(self.schema_file, 'r') as f:
             self.schema = json.load(f)
             
-        # Extract enums first (prioritize definitions)
+        # Extract enums first
         self._extract_enums()
-        
-        # Generate main root class (MigrationConfig) from schema root
-        if self.schema.get('type') == 'object' and 'properties' in self.schema:
-            # Use the exact class name for root config class
-            self._generate_root_class('MigrationConfig', self.schema)
         
         # Generate classes from definitions
         if 'definitions' in self.schema:
             for name, definition in self.schema['definitions'].items():
                 if definition.get('type') == 'object':
                     self._generate_class_from_definition(name, definition)
+        
+        # Generate main classes from root properties
+        for name, prop in self.schema.get('properties', {}).items():
+            if prop.get('type') == 'object':
+                class_name = self._to_class_name(name)
+                self._generate_class_from_definition(class_name, prop)
                 
         # Write output
         self._write_output()
         print(f"✅ Generated {len(self.generated_classes)} classes in {self.output_file}")
         
     def _extract_enums(self) -> None:
-        """Extract all enum definitions from schema - prioritize definitions section"""
-        # Use a set to track enum values and avoid duplicates
-        enum_signatures = set()
-        
-        # FIRST: Process definitions section (these have correct names)
-        if 'definitions' in self.schema:
-            for name, definition in self.schema['definitions'].items():
-                if definition.get('type') == 'string' and 'enum' in definition:
-                    valid_enum_values = [v for v in definition['enum'] if v is not None]
-                    if valid_enum_values:
-                        enum_values = tuple(sorted(valid_enum_values))
-                        enum_name = self._to_class_name(name)
-                        
-                        # Always add from definitions (they have priority)
-                        self.enums[enum_name] = valid_enum_values
-                        enum_signatures.add(enum_values)
-        
-        # SECOND: Find other enums in schema (skip if already found)
+        """Extract all enum definitions from schema"""
         def find_enums(obj, path="", parent_key=""):
             if isinstance(obj, dict):
                 if 'enum' in obj:
-                    # Filter out None values and sort for signature
-                    valid_enum_values = [v for v in obj['enum'] if v is not None]
-                    if valid_enum_values:  # Only process if we have valid enum values
-                        enum_values = tuple(sorted(valid_enum_values))
-                        if enum_values not in enum_signatures:
-                            enum_name = self._guess_enum_name(path, obj.get('description', ''), parent_key)
-                            self.enums[enum_name] = valid_enum_values
-                            enum_signatures.add(enum_values)
+                    enum_name = self._guess_enum_name(path, obj.get('description', ''), parent_key)
+                    self.enums[enum_name] = obj['enum']
                 for key, value in obj.items():
                     find_enums(value, f"{path}.{key}" if path else key, key)
             elif isinstance(obj, list):
@@ -108,54 +86,41 @@ class SchemaToDataclassGenerator:
                     
         find_enums(self.schema)
         
+        # Also check definitions for enum-only definitions
+        if 'definitions' in self.schema:
+            for name, definition in self.schema['definitions'].items():
+                if definition.get('type') == 'string' and 'enum' in definition:
+                    enum_name = self._to_class_name(name)
+                    self.enums[enum_name] = definition['enum']
+        
     def _guess_enum_name(self, path: str, description: str, parent_key: str = "") -> str:
         """Guess enum name from path and description"""
-        # Combine all sources for better matching
-        combined = f"{path} {description} {parent_key}".lower()
-        
-        # Look for specific patterns in order of specificity
-        if any(pattern in combined for pattern in ['partition_type', 'partitiontype']):
+        # Look for common patterns
+        if 'partition_type' in path.lower() or 'partitiontype' in parent_key.lower():
             return 'PartitionTypeEnum'
-        elif any(pattern in combined for pattern in ['interval_type', 'intervaltype']):
+        elif 'interval_type' in path.lower() or 'intervaltype' in parent_key.lower():
             return 'IntervalTypeEnum'  
-        elif any(pattern in combined for pattern in ['subpartition_type', 'subpartitiontype']):
+        elif 'subpartition_type' in path.lower() or 'subpartitiontype' in parent_key.lower():
             return 'SubpartitionTypeEnum'
-        elif any(pattern in combined for pattern in ['migration_action', 'migrationaction']):
+        elif 'migration_action' in path.lower() or 'migrationaction' in parent_key.lower():
             return 'MigrationActionEnum'
-        elif 'priority' in combined:
-            return 'PriorityEnum'
-        elif any(pattern in combined for pattern in ['nullable', 'yesno', 'yes', 'no']):
+        elif 'priority' in path.lower():
+            return 'Priority'
+        elif 'nullable' in path.lower() or parent_key.lower() == 'nullable':
+            return 'YesNoEnum'
+        elif 'yesno' in parent_key.lower() or any(x in path.lower() for x in ['yes', 'no', 'y', 'n']):
             return 'YesNoEnum'
         else:
-            # Generate from the most specific available key
-            key_to_use = parent_key or path.split('.')[-1] if path else 'Unknown'
-            # Apply proper PascalCase conversion
-            if key_to_use.lower() in self._get_special_cases():
-                return self._get_special_cases()[key_to_use.lower()] + 'Enum'
-            return self._to_class_name(key_to_use) + 'Enum'
-    
-    def _get_special_cases(self) -> Dict[str, str]:
-        """Get special case mappings for enum names"""
-        return {
-            'partitiontype': 'PartitionType',
-            'intervaltype': 'IntervalType',
-            'subpartitiontype': 'SubpartitionType',
-            'migrationaction': 'MigrationAction',
-            'yesno': 'YesNo'
-        }
-    
-    def _generate_root_class(self, class_name: str, definition: Dict) -> None:
-        """Generate the root MigrationConfig class with exact name"""
-        # Use exact class name without conversion
-        self._generate_dataclass(class_name, definition)
+            # Generate from path or parent_key
+            if parent_key:
+                return self._to_class_name(parent_key) + 'Enum'
+            parts = path.split('.')
+            return self._to_class_name(parts[-1] if parts else 'Unknown') + 'Enum'
     
     def _generate_class_from_definition(self, name: str, definition: Dict) -> None:
         """Generate a dataclass from a schema definition"""
         class_name = self._to_class_name(name)
-        self._generate_dataclass(class_name, definition)
-    
-    def _generate_dataclass(self, class_name: str, definition: Dict) -> None:
-        """Generate a dataclass with the given exact class name"""
+        
         imports = {'from dataclasses import dataclass, field',
                   'from typing import List, Optional, Dict, Any, Union',
                   'from enum import Enum'}
@@ -166,23 +131,18 @@ class SchemaToDataclassGenerator:
         content = f'@dataclass\nclass {class_name}:\n'
         content += f'    """{definition.get("description", f"{class_name} configuration")}"""\n'
         
-        # Generate fields - required fields first, then optional fields
+        # Generate fields
         properties = definition.get('properties', {})
         required = set(definition.get('required', []))
         
-        # Split into required and optional fields
-        required_fields = []
-        optional_fields = []
-        
+        fields = []
         for field_name, field_def in properties.items():
             field_type, field_imports, field_deps = self._get_python_type(field_def)
             imports.update(field_imports)
             dependencies.update(field_deps)
             
             is_required = field_name in required
-            # Check if field has a default value in schema or should be treated as optional
-            has_schema_default = 'default' in field_def
-            default = self._get_default_value(field_def, is_required and not has_schema_default)
+            default = self._get_default_value(field_def, is_required)
             
             field_line = f'    {field_name}: {field_type}'
             if default is not None:
@@ -192,49 +152,18 @@ class SchemaToDataclassGenerator:
             if field_def.get('description'):
                 field_line += f'  # {field_def["description"]}'
                 
-            # A field is truly required only if it's in required list AND has no default
-            if is_required and not has_schema_default:
-                required_fields.append(field_line)
-            else:
-                optional_fields.append(field_line)
-        
-        # Combine required fields first, then optional fields
-        fields = required_fields + optional_fields
-        
-        # Build field definitions dict for serialization
-        field_definitions = {}
-        for field_name, field_def in properties.items():
-            field_definitions[field_name] = field_def
+            fields.append(field_line)
             
         content += '\n'.join(fields)
         
         # Add serialization methods
         content += '\n\n    def to_dict(self) -> Dict[str, Any]:\n'
         content += '        """Convert to dictionary for JSON serialization"""\n'
-        content += '        from dataclasses import asdict\n'
-        content += '        result = asdict(self)\n'
-        content += '        # Recursively convert enums and nested objects\n'
-        content += '        def convert_value(val):\n'
-        content += '            if isinstance(val, Enum):\n'
-        content += '                return val.value\n'
-        content += '            elif isinstance(val, dict):\n'
-        content += '                return {k: convert_value(v) for k, v in val.items()}\n'
-        content += '            elif isinstance(val, list):\n'
-        content += '                return [convert_value(item) for item in val]\n'
-        content += '            return val\n'
-        content += '        return convert_value(result)\n\n'
+        content += '        return asdict(self)\n\n'
         
         content += '    @classmethod\n'
         content += f'    def from_dict(cls, data: Dict[str, Any]) -> "{class_name}":\n'
-        content += '        """Create instance from dictionary with proper type conversions"""\n'
-        # Convert string enum values back to enum instances - we need properties dict
-        content += '        if data is None:\n'
-        content += '            return None\n'
-        
-        # For each field that might be an enum or nested object, add conversion logic
-        # This is complex - we'll generate specific conversion logic per class
-        # For now, let's keep it simple and let from_dict handle basic cases
-        # Nested objects will be handled when we call their from_dict methods
+        content += '        """Create instance from dictionary"""\n'
         content += '        return cls(**data)\n'
         
         imports.add('from dataclasses import asdict')
@@ -325,61 +254,7 @@ class SchemaToDataclassGenerator:
     
     def _to_class_name(self, name: str) -> str:
         """Convert snake_case to PascalCase"""
-        # Handle special cases for proper capitalization
-        special_cases = {
-            # Schema definition names (already PascalCase)
-            'tableconfig': 'TableConfig',
-            'connectiondetails': 'ConnectionDetails',
-            'environmentconfig': 'EnvironmentConfig', 
-            'currentstate': 'CurrentState',
-            'commonsettings': 'CommonSettings',
-            'targetconfiguration': 'TargetConfiguration',
-            'migrationsettings': 'MigrationSettings',
-            'columninfo': 'ColumnInfo',
-            'lobstorageinfo': 'LobStorageInfo',
-            'storageparameters': 'StorageParameters',
-            'indexinfo': 'IndexInfo',
-            'grantinfo': 'GrantInfo',
-            'availablecolumns': 'AvailableColumns',
-            'datatablespaces': 'DataTablespaces',
-            'tablespaceconfig': 'TablespaceConfig',
-            'subpartitiondefaults': 'SubpartitionDefaults',
-            'sizerecommendation': 'SizeRecommendation',
-            'paralleldefaults': 'ParallelDefaults',
-            # Snake case versions
-            'connection_details': 'ConnectionDetails',
-            'environment_config': 'EnvironmentConfig', 
-            'table_config': 'TableConfig',
-            'current_state': 'CurrentState',
-            'common_settings': 'CommonSettings',
-            'target_configuration': 'TargetConfiguration',
-            'migration_settings': 'MigrationSettings',
-            'column_info': 'ColumnInfo',
-            'lob_storage_info': 'LobStorageInfo',
-            'storage_parameters': 'StorageParameters',
-            'index_info': 'IndexInfo',
-            'grant_info': 'GrantInfo',
-            'available_columns': 'AvailableColumns',
-            'data_tablespaces': 'DataTablespaces',
-            'tablespace_config': 'TablespaceConfig',
-            'subpartition_defaults': 'SubpartitionDefaults',
-            'size_recommendation': 'SizeRecommendation',
-            'parallel_defaults': 'ParallelDefaults'
-        }
-        
-        if name.lower() in special_cases:
-            return special_cases[name.lower()]
-        
-        # Handle snake_case input
-        if '_' in name:
-            return ''.join(word.capitalize() for word in name.split('_'))
-        
-        # Handle PascalCase input - return as-is if already proper
-        if name and name[0].isupper():
-            return name
-            
-        # Handle lowercase input - capitalize first letter  
-        return name.capitalize() if name else name
+        return ''.join(word.capitalize() for word in name.split('_'))
     
     def _write_output(self) -> None:
         """Write generated classes to output file"""
@@ -442,7 +317,7 @@ def main():
     """Main entry point"""
     generator = SchemaToDataclassGenerator(
         schema_file='lib/enhanced_migration_schema.json',
-        output_file='lib/migration_models.py'
+        output_file='lib/generated_models.py'
     )
     generator.generate()
 

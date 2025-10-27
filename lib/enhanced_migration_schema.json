@@ -204,6 +204,24 @@
       }
     },
 
+    "SizeRecommendation": {
+      "type": "object",
+      "description": "Size-based partitioning recommendation",
+      "required": ["max_gb", "count"],
+      "properties": {
+        "max_gb": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum size in GB for this recommendation"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Recommended partition count"
+        }
+      }
+    },
+
     "TableConfig": {
       "type": "object",
       "description": "Complete table configuration for migration",
@@ -324,6 +342,28 @@
           "type": "integer",
           "minimum": 0,
           "description": "Current number of subpartitions per partition"
+        },
+        "grants": {
+          "type": "array",
+          "description": "Table grants and privileges for DDL generation",
+          "items": {
+            "type": "object",
+            "properties": {
+              "grantee": {
+                "type": "string",
+                "description": "User or role receiving the grant"
+              },
+              "privilege": {
+                "type": "string",
+                "description": "Privilege being granted (SELECT, INSERT, UPDATE, etc.)"
+              },
+              "grantable": {
+                "type": "string",
+                "description": "Whether grant can be passed on (YES/NO)"
+              }
+            },
+            "required": ["grantee", "privilege", "grantable"]
+          }
         }
       }
     },

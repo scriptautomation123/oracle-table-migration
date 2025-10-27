@@ -5,8 +5,7 @@ Get up and running with Oracle table migration in 5 minutes.
 ## Prerequisites
 
 - Python 3.7+
-- Oracle SQLcl installed and configured
-- Access to source Oracle database
+- Access to source Oracle database with connection details
 
 ## Installation
 
@@ -19,33 +18,24 @@ Get up and running with Oracle table migration in 5 minutes.
 
 ## Basic Usage
 
-### 1. Copy Sample Configuration
+### 1. Discover Your Schema
 ```bash
-cp examples/configs/migration_config.json my_migration.json
+python3 src/generate.py --discover --schema YOUR_SCHEMA --connection "user/password@host:port/service"
 ```
 
-### 2. Edit Configuration
-Edit `my_migration.json` for your table:
-
-```json
-{
-  "table_name": "MY_TABLE",
-  "schema_name": "MY_SCHEMA", 
-  "target_partitioning": {
-    "type": "RANGE",
-    "partition_key": "DATE_COLUMN",
-    "interval": "MONTHLY"
-  },
-  "migration_options": {
-    "migrate_data": true,
-    "enable_delta_loads": true
-  }
-}
+**Example:**
+```bash
+python3 src/generate.py --discover --schema APP_DATA_OWNER --connection "system/oracle123@localhost:1521/FREEPDB1"
 ```
 
-### 3. Generate Migration Scripts
+This will:
+- Analyze all tables in your schema
+- Generate a complete configuration file
+- Display the config file location prominently
+
+### 2. Generate Migration Scripts
 ```bash
-python src/generate.py --config my_migration.json
+python3 src/generate.py --config output/run_*/01_discovery/config.json
 ```
 
 This creates `output/MY_SCHEMA_MY_TABLE/` directory with:
