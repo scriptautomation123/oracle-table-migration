@@ -35,6 +35,7 @@ from .migration_models import (
     MigrationConfig,
     MigrationSettings,
     ParallelDefaults,
+    PartitionStorageSettings,
     PartitionTypeEnum,
     SizeRecommendation,
     StorageParameters,
@@ -972,6 +973,16 @@ class TableDiscovery:
             "tablespace": env_tablespaces["data"],
             "lob_tablespaces": env_tablespaces["lob"],
             "parallel_degree": recommended_parallel,
+            "partition_storage": {
+                "data_tablespace": env_tablespaces["data"],
+                "subpartition_tablespaces": env_tablespaces["lob"] if env_tablespaces["lob"] else [env_tablespaces["data"]],
+                "pct_free": 10,
+                "compression": "DISABLED",
+                "segment_attributes": {
+                    "buffer_pool": "DEFAULT",
+                    "flashback_archive": False
+                }
+            }
         }
 
         # Get complete typed column metadata and storage details
@@ -1013,15 +1024,15 @@ class TableDiscovery:
         # Build typed available columns
         available_columns = AvailableColumns(
             timestamp_columns=[
-                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"])
+                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"], is_identity=False)
                 for col in timestamp_columns
             ],
             numeric_columns=[
-                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"])
+                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"], is_identity=False)
                 for col in numeric_columns
             ],
             string_columns=[
-                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"])
+                ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"], is_identity=False)
                 for col in string_columns
             ],
         )
@@ -1050,6 +1061,12 @@ class TableDiscovery:
         )
 
         # Build typed target configuration
+        partition_storage_obj = None
+        if target_configuration.get("partition_storage"):
+            partition_storage_obj = PartitionStorageSettings.from_dict(
+                target_configuration["partition_storage"]
+            )
+
         target_config_obj = TargetConfiguration(
             partition_type=PartitionTypeEnum(target_configuration["partition_type"]),
             partition_column=target_configuration["partition_column"],
@@ -1064,6 +1081,7 @@ class TableDiscovery:
             tablespace=target_configuration["tablespace"],
             lob_tablespaces=target_configuration["lob_tablespaces"],
             parallel_degree=target_configuration["parallel_degree"],
+            partition_storage=partition_storage_obj,
         )
 
         # Build typed migration settings
@@ -1362,11 +1380,11 @@ class TableDiscovery:
         try:
             env_config = self.env_manager.load_environment_config(self.environment)
             return EnvironmentConfig(
-                name=env_config.environment,
+                name=env_config.name,
                 tablespaces=DataTablespaces(
                     data=TablespaceConfig(
-                        primary=env_config.tablespaces.primary,
-                        lob=env_config.tablespaces.lob,
+                        primary=env_config.tablespaces.data.primary,
+                        lob=env_config.tablespaces.data.lob,
                     )
                 ),
                 subpartition_defaults=SubpartitionDefaults(
@@ -1734,7 +1752,17 @@ class TableDiscovery:
         self, config: MigrationConfig, output_file: str = "migration_config.json"
     ):
         """Save configuration to JSON file using automatic serialization"""
-        config.save_to_file(output_file)
+        import json
+        from pathlib import Path
+
+        # Ensure directory exists
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Convert to dict and save
+        with open(output_file, 'w') as f:
+            json.dump(config.to_dict(), f, indent=2)
+
         print(f"✓ Configuration saved to: {output_file}")
         print("  Edit this file to customize migration settings")
         print(f"  Then run: python3 generate_scripts.py --config {output_file}")

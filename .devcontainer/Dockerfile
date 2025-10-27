@@ -3,17 +3,16 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu-24.04
 # Install Oracle Instant Client and tools
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends \
-    python3-pip=24.0+dfsg-1ubuntu1 \
-    python3-dev=3.12.3-0ubuntu2 \
-    build-essential=12.10ubuntu1 \
-    libaio1t64=0.3.113-7build1 \
-    libaio1=0.3.113-7build1 \
-    wget=1.21.4-1ubuntu4.1 \
-    unzip=6.0-28ubuntu4.1 \
-    curl=8.5.0-2ubuntu10.4 \
-    vim=2:9.1.0016-1ubuntu7.3 \
-    less=590-2ubuntu2.1 \
-    git=1:2.43.0-1ubuntu7.1 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    libaio1t64 \
+    wget \
+    unzip \
+    curl \
+    vim-nox \
+    less \
+    git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

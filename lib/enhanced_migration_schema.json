@@ -11,7 +11,7 @@
       "module_name": "generated_models",
       "base_imports": [
         "from dataclasses import dataclass, field, asdict",
-        "from typing import List, Optional, Dict, Any, Union",
+        "from typing import List, Optional, Dict, Any",
         "from enum import Enum",
         "import json",
         "from datetime import datetime"
@@ -755,6 +755,60 @@
           "minimum": 1,
           "maximum": 128,
           "description": "Parallel degree for migration operations"
+        },
+        "partition_storage": {
+          "$ref": "#/definitions/PartitionStorageSettings"
+        }
+      }
+    },
+
+    "PartitionStorageSettings": {
+      "type": "object",
+      "description": "Storage parameters for interval-hash partitioned tables",
+      "properties": {
+        "data_tablespace": {
+          "type": "string",
+          "description": "Primary data tablespace for partitions",
+          "pattern": "^[A-Z][A-Z0-9_$#]*$",
+          "default": "USERS"
+        },
+        "subpartition_tablespaces": {
+          "type": "array",
+          "description": "Array of tablespaces to distribute hash subpartitions across",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_$#]*$"
+          }
+        },
+        "pct_free": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 99,
+          "description": "PCTFREE for partitions",
+          "default": 10
+        },
+        "compression": {
+          "type": "string",
+          "enum": ["DISABLED", "ENABLED", "BASIC", "OLTP", "QUERY HIGH", "QUERY LOW", "ARCHIVE LOW", "ARCHIVE HIGH"],
+          "description": "Partition-level compression",
+          "default": "DISABLED"
+        },
+        "segment_attributes": {
+          "type": "object",
+          "description": "Additional segment attributes for partitions",
+          "properties": {
+            "buffer_pool": {
+              "type": "string",
+              "enum": ["DEFAULT", "KEEP", "RECYCLE"],
+              "description": "Buffer pool assignment",
+              "default": "DEFAULT"
+            },
+            "flashback_archive": {
+              "type": "boolean",
+              "description": "Enable flashback archive for partitions",
+              "default": false
+            }
+          }
         }
       }
     },

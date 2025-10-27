@@ -1,212 +1,517 @@
-# Unified Runner Consolidation Plan
+# Principal Engineer Analysis: Robust Dataclass Serialization/Deserialization for Schema-Driven Python Codegen
 
-## Overview
+## Executive Summary
 
-Create `src/runner.py` to replace `test_runner.py` + `unified_wrapper.sh` + `unified_runner.sh`, providing a single tool for development testing, validation, and production deployment.
+Your approach of generating Python dataclasses from a JSON Schema is solid and aligns with best practices for maintainability and correctness. However, the default `dataclasses.asdict()` and `cls(**data)` patterns are insufficient for real-world, type-rich schemas—especially those with nested dataclasses, enums, lists, and optionals. To achieve robust, type-safe, roundtrip-able serialization/deserialization, you should generate **explicit** `to_dict` and `from_dict` methods per class.
 
-## Architecture
+---
 
-### Command Structure (Hybrid)
+## 1. Key Principles
 
-```bash
-# Test/E2E mode (orchestrates full workflow)
-python3 src/runner.py test --connection CONN --schema SCHEMA [options]
+- **Schema as source of truth:** Codegen should be idempotent and reflect the schema exactly.
+- **Explicit is better than implicit:** Generate field-by-field (not generic/reflection-based) conversions for clarity and speed.
+- **Handle all major types:** Enums, nested dataclasses, lists of dataclasses/enums, optionals, primitives.
+- **Round-trip guarantee:** `json → dataclass → json` and `dataclass → json → dataclass` should be isomorphic.
 
-# Validation mode (direct plsql-util.sql invocation)
-python3 src/runner.py validate <operation> <args> --connection CONN
+---
 
-# Migration mode (direct execution)
-python3 src/runner.py migrate <mode> <owner> <table> --connection CONN
+## 2. Problems with Naive Approaches
 
-# Discovery mode (schema discovery only)
-python3 src/runner.py discover --schema SCHEMA --connection CONN [options]
+- `dataclasses.asdict` does **not** convert enums to values or handle nested dataclasses with custom serialization.
+- `cls(**data)` does **not** convert strings to enums, or dicts/lists to dataclasses/enums.
+- Optionals, lists, and deep nesting are not handled correctly by default.
 
-# Generation mode (DDL generation only)
-python3 src/runner.py generate --config CONFIG.json [options]
-```
+---
 
-### Key Features
+## 3. Solution: Codegen Templates
 
-- Auto-detect SQL client (sqlcl → sqlplus fallback) with `--sql-client` override
-- Direct plsql-util.sql invocation for validation operations
-- LDAP thin client support via connection string detection
-- Unified output directory structure for all modes
-- Comprehensive error handling and reporting
+### 3.1. Generated `to_dict`
 
-## Implementation Steps
-
-### 1. Create Core Runner Module (`src/runner.py`)
-
-- Main entry point with argparse subcommands: `test`, `validate`, `migrate`, `discover`, `generate`
-- SQL client detection function (check sqlcl, then sqlplus, with override)
-- LDAP connection string parsing and handling
-- Unified output directory creation with timestamping
-
-### 2. Create SQL Executor Module (`src/lib/sql_executor.py`)
-
-Consolidate SQL execution logic from shell scripts:
-
-- `find_sql_client()` - auto-detect sqlcl/sqlplus
-- `execute_sql_script()` - run SQL file with sqlcl/sqlplus
-- `execute_plsql_util()` - invoke plsql-util.sql with category/operation/args
-- `parse_sql_output()` - extract RESULT: PASSED/FAILED from logs
-- Connection string parsing for LDAP thin client support
-
-### 3. Create Validation Module (`src/lib/validation_runner.py`)
-
-Port unified_runner.sh validation logic:
-
-- `validate_table_existence(owner, table, connection)`
-- `validate_row_count(owner, table, expected, connection)`
-- `validate_constraints(owner, table, connection)`
-- `validate_pre_swap(owner, table, new, old, connection)`
-- `validate_post_swap(owner, table, old, connection)`
-  All operations call plsql-util.sql via sql_executor
-
-### 4. Refactor Test Orchestrator (`src/lib/test_orchestrator.py`)
-
-Move E2E workflow logic from `test_runner.py`:
-
-- Keep 8-step workflow (schema setup → dataclass gen → discover → generate → validate → execute → validate → report)
-- Use sql_executor for all SQL operations
-- Use validation_runner for database validation
-- Maintain TestConfig, TestValidator, TestReporter integration
-
-### 5. Update Existing Library Modules
-
-Relocate and enhance test/lib modules:
-
-- Move `test/lib/*.py` → `src/lib/`
-- Update imports in all modules
-- Enhance `test_executor.py` to use sql_executor for SQL operations
-- Add LDAP connection support to test_config.py
-
-### 6. Create Unified CLI Interface (`src/runner.py` main)
-
-Implement argparse with subcommands:
-
-**test subcommand:**
+Recursively handles enums, nested dataclasses, lists, dicts.
 
 ```python
-parser_test = subparsers.add_parser('test')
-parser_test.add_argument('--connection', required=True)
-parser_test.add_argument('--schema', required=True)
-parser_test.add_argument('--mode', choices=['dev', 'test', 'prod'], default='dev')
-parser_test.add_argument('--skip-schema-setup', action='store_true')
-parser_test.add_argument('--sql-client', choices=['sqlcl', 'sqlplus'])
+def to_dict(self) -> dict:
+    def convert(val):
+        if isinstance(val, Enum):
+            return val.value
+        elif dataclasses.is_dataclass(val):
+            return val.to_dict()
+        elif isinstance(val, list):
+            return [convert(v) for v in val]
+        elif isinstance(val, dict):
+            return {k: convert(v) for k, v in val.items()}
+        else:
+            return val
+    return {f: convert(getattr(self, f)) for f in self.__dataclass_fields__}
 ```
 
-**validate subcommand:**
+### 3.2. Generated `from_dict`
+
+Handles per-field instantiation, recursing as needed.
 
 ```python
-parser_validate = subparsers.add_parser('validate')
-parser_validate.add_argument('operation', choices=['check_existence', 'count_rows', ...])
-parser_validate.add_argument('args', nargs='*')
-parser_validate.add_argument('--connection', required=True)
-parser_validate.add_argument('--sql-client', choices=['sqlcl', 'sqlplus'])
+@classmethod
+def from_dict(cls, data: dict) -> "ClassName":
+    if data is None:
+        return None
+    return cls(
+        enum_field=EnumClass(data["enum_field"]) if "enum_field" in data and data["enum_field"] is not None else None,
+        nested=NestedClass.from_dict(data["nested"]) if "nested" in data and data["nested"] is not None else None,
+        items=[ItemClass.from_dict(i) for i in data.get("items", [])],
+        flag=data.get("flag"),
+        # ... repeat for all fields
+    )
 ```
 
-**migrate subcommand:**
+---
+
+## 4. How to Generate This in Your Script
+
+For each class, emit:
+
+- The standard `@dataclass` and field definitions.
+- The `to_dict` method (may be shared as a single template).
+- The `from_dict` method:
+    - For each field, codegen the correct conversion based on the field type (enum, dataclass, list, primitive).
+    - Optionals: add `None` checks.
+
+### Example Codegen for a Class
+
+Suppose schema gives:
 
 ```python
-parser_migrate = subparsers.add_parser('migrate')
-parser_migrate.add_argument('mode', choices=['generate', 'execute', 'auto'])
-parser_migrate.add_argument('owner')
-parser_migrate.add_argument('table')
-parser_migrate.add_argument('--connection', required=True)
+@dataclass
+class ColumnInfo:
+    name: str
+    type: str
+    nullable: YesNoEnum
+    details: Optional[Details]
+    history: List[HistoryItem]
 ```
 
-**discover subcommand:**
+The generator would emit:
 
 ```python
-parser_discover = subparsers.add_parser('discover')
-parser_discover.add_argument('--schema', required=True)
-parser_discover.add_argument('--connection', required=True)
-parser_discover.add_argument('--output-dir')
+def to_dict(self) -> dict:
+    def convert(val):
+        if isinstance(val, Enum):
+            return val.value
+        elif dataclasses.is_dataclass(val):
+            return val.to_dict()
+        elif isinstance(val, list):
+            return [convert(v) for v in val]
+        elif isinstance(val, dict):
+            return {k: convert(v) for k, v in val.items()}
+        else:
+            return val
+    return {f: convert(getattr(self, f)) for f in self.__dataclass_fields__}
+
+@classmethod
+def from_dict(cls, data: dict) -> "ColumnInfo":
+    if data is None:
+        return None
+    return cls(
+        name=data.get("name"),
+        type=data.get("type"),
+        nullable=YesNoEnum(data["nullable"]) if "nullable" in data and data["nullable"] is not None else None,
+        details=Details.from_dict(data["details"]) if "details" in data and data["details"] is not None else None,
+        history=[HistoryItem.from_dict(x) for x in data.get("history", [])],
+    )
 ```
 
-**generate subcommand:**
+---
+
+## 5. Full Example: Minimal Working Model
+
+Here’s a self-contained demonstration for a typical class tree:
 
 ```python
-parser_generate = subparsers.add_parser('generate')
-parser_generate.add_argument('--config', required=True)
-parser_generate.add_argument('--output-dir')
+from dataclasses import dataclass
+from enum import Enum
+from typing import List, Optional
+import dataclasses
+
+class YesNoEnum(Enum):
+    YES = "YES"
+    NO = "NO"
+
+@dataclass
+class Details:
+    detail_type: str
+
+    def to_dict(self):
+        return {"detail_type": self.detail_type}
+
+    @classmethod
+    def from_dict(cls, d):
+        if d is None:
+            return None
+        return cls(detail_type=d.get("detail_type"))
+
+@dataclass
+class HistoryItem:
+    event: str
+
+    def to_dict(self):
+        return {"event": self.event}
+
+    @classmethod
+    def from_dict(cls, d):
+        if d is None:
+            return None
+        return cls(event=d.get("event"))
+
+@dataclass
+class ColumnInfo:
+    name: str
+    type: str
+    nullable: YesNoEnum
+    details: Optional[Details]
+    history: List[HistoryItem]
+
+    def to_dict(self):
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        return {f: convert(getattr(self, f)) for f in self.__dataclass_fields__}
+
+    @classmethod
+    def from_dict(cls, data):
+        if data is None:
+            return None
+        return cls(
+            name=data.get("name"),
+            type=data.get("type"),
+            nullable=YesNoEnum(data["nullable"]) if "nullable" in data and data["nullable"] is not None else None,
+            details=Details.from_dict(data["details"]) if "details" in data and data["details"] is not None else None,
+            history=[HistoryItem.from_dict(x) for x in data.get("history", [])],
+        )
 ```
 
-### 7. Implement LDAP Thin Client Support
+---
 
-- Parse connection strings for LDAP format
-- Handle both standard and LDAP Oracle connections
-- Pass appropriate connection format to sqlcl/sqlplus
+## 6. Generator Pseudocode
 
-### 8. Update Documentation
+In your `SchemaToDataclassGenerator`, update `_generate_dataclass` to emit `from_dict` and `to_dict` by iterating over the schema properties:
 
-- Create `src/README.md` with comprehensive usage examples
-- Update root README.md to reference src/runner.py
-- Add examples for all command modes
-- Document LDAP connection format
-
-### 9. Archive Old Files
-
-After validation:
-
-- Archive `templates/test/test_runner.py` → `docs/archive/`
-- Archive `templates/plsql-util/unified_runner.sh` → `docs/archive/`
-- Archive `templates/plsql-util/unified_wrapper.sh` → `docs/archive/`
-- Archive `templates/test/lib/*.py` (after moving to src/lib/)
-- Update `.cursorrules` to reference new runner location
-
-### 10. Integration Testing
-
-- Test all command modes: test, validate, migrate, discover, generate
-- Verify sqlcl/sqlplus auto-detection
-- Test LDAP connection strings
-- Validate plsql-util.sql invocation
-- Ensure output directory structure consistency
-
-## File Structure After Changes
-
-```
-src/
-  runner.py                    # Main unified CLI entry point
-  generate.py                  # Existing (unchanged)
-  schema_to_dataclass.py      # Existing (unchanged)
-  lib/
-    sql_executor.py            # NEW: SQL client detection & execution
-    validation_runner.py       # NEW: Database validation operations
-    test_orchestrator.py       # NEW: E2E test workflow (from test_runner.py)
-    test_config.py            # MOVED from templates/test/lib/
-    test_executor.py          # MOVED (enhanced with sql_executor)
-    test_validator.py         # MOVED from templates/test/lib/
-    test_reporter.py          # MOVED from templates/test/lib/
-    __init__.py               # NEW
-
-templates/
-  plsql-util/
-    plsql-util.sql           # KEEP (unchanged)
-    README.md                # KEEP (unchanged)
-
-docs/archive/
-  test_runner.py             # ARCHIVED
-  unified_runner.sh          # ARCHIVED
-  unified_wrapper.sh         # ARCHIVED
+```pseudo
+for field_name, field_def in properties.items():
+    if field is enum:
+        line = '{field_name}=EnumClass(data["{field_name}"]) if "{field_name}" in data and data["{field_name}"] is not None else None,'
+    elif field is dataclass:
+        line = '{field_name}=ClassName.from_dict(data["{field_name}"]) if "{field_name}" in data and data["{field_name}"] is not None else None,'
+    elif field is list of dataclass:
+        line = '{field_name}=[ClassName.from_dict(x) for x in data.get("{field_name}", [])],'
+    else:
+        line = '{field_name}=data.get("{field_name}"),'
 ```
 
-## Success Criteria
+---
 
-1. Single `src/runner.py` handles all modes (test, validate, migrate, discover, generate)
-2. Auto-detects SQL client (sqlcl → sqlplus fallback)
-3. Supports LDAP thin client connections
-4. Direct plsql-util.sql invocation for validation
-5. Maintains full E2E test workflow compatibility
-6. Same tool works for dev, test, and production
-7. Comprehensive CLI help for all subcommands
-8. All existing test cases pass with new runner
+## 7. Testing and Validation
 
-## Migration Path
+- **Unit test** each class: `assert Model.from_dict(model.to_dict()) == model`
+- **Test round-trip** on real JSON from your schema.
+- **Validate** against your original JSON Schema if possible.
 
-1. Create new modules without touching existing files
-2. Implement and test each subcommand independently
-3. Validate against existing test workflows
-4. Archive old files only after full validation
-5. Update documentation last
+---
+
+## 8. References
+
+- [dataclasses.asdict limitations](https://docs.python.org/3/library/dataclasses.html#dataclasses.asdict)
+- [dacite: dataclass deserialization](https://github.com/konradhalas/dacite)
+- [PEP 563: Postponed Evaluation of Annotations](https://peps.python.org/pep-0563/)
+
+---
+
+## 9. Summary Table: Type Mapping
+
+| JSON Schema Type | Python Type Hint                | to_dict logic         | from_dict logic                                  |
+|------------------|---------------------------------|----------------------|--------------------------------------------------|
+| string           | str                             | as is                | as is                                            |
+| string enum      | Enum                            | .value               | EnumClass(value)                                 |
+| integer          | int                             | as is                | as is                                            |
+| number           | float                           | as is                | as is                                            |
+| boolean          | bool                            | as is                | as is                                            |
+| object/$ref      | dataclass                       | .to_dict()           | DataclassClass.from_dict(value)                  |
+| array of objects | List[dataclass]                 | [x.to_dict() for x]  | [DataclassClass.from_dict(x) for x in value]     |
+| array of enums   | List[Enum]                      | [x.value for x in l] | [EnumClass(x) for x in value]                    |
+| optional         | Optional[...]                   | as is or None        | as is or None                                    |
+
+---
+
+## 10. Next Steps
+
+- **Integrate the templates above into your generator** so each class gets explicit `from_dict` and `to_dict`.
+- **Test** with real data.
+- **Ask for a codegen template** for your specific schema if you want further automation.
+
+---
+
+**Reach out if you want a full code block for your generator to emit these methods automatically for each class!**# Principal Engineer Analysis: Robust Dataclass Serialization/Deserialization for Schema-Driven Python Codegen
+
+## Executive Summary
+
+Your approach of generating Python dataclasses from a JSON Schema is solid and aligns with best practices for maintainability and correctness. However, the default `dataclasses.asdict()` and `cls(**data)` patterns are insufficient for real-world, type-rich schemas—especially those with nested dataclasses, enums, lists, and optionals. To achieve robust, type-safe, roundtrip-able serialization/deserialization, you should generate **explicit** `to_dict` and `from_dict` methods per class.
+
+---
+
+## 1. Key Principles
+
+- **Schema as source of truth:** Codegen should be idempotent and reflect the schema exactly.
+- **Explicit is better than implicit:** Generate field-by-field (not generic/reflection-based) conversions for clarity and speed.
+- **Handle all major types:** Enums, nested dataclasses, lists of dataclasses/enums, optionals, primitives.
+- **Round-trip guarantee:** `json → dataclass → json` and `dataclass → json → dataclass` should be isomorphic.
+
+---
+
+## 2. Problems with Naive Approaches
+
+- `dataclasses.asdict` does **not** convert enums to values or handle nested dataclasses with custom serialization.
+- `cls(**data)` does **not** convert strings to enums, or dicts/lists to dataclasses/enums.
+- Optionals, lists, and deep nesting are not handled correctly by default.
+
+---
+
+## 3. Solution: Codegen Templates
+
+### 3.1. Generated `to_dict`
+
+Recursively handles enums, nested dataclasses, lists, dicts.
+
+```python
+def to_dict(self) -> dict:
+    def convert(val):
+        if isinstance(val, Enum):
+            return val.value
+        elif dataclasses.is_dataclass(val):
+            return val.to_dict()
+        elif isinstance(val, list):
+            return [convert(v) for v in val]
+        elif isinstance(val, dict):
+            return {k: convert(v) for k, v in val.items()}
+        else:
+            return val
+    return {f: convert(getattr(self, f)) for f in self.__dataclass_fields__}
+```
+
+### 3.2. Generated `from_dict`
+
+Handles per-field instantiation, recursing as needed.
+
+```python
+@classmethod
+def from_dict(cls, data: dict) -> "ClassName":
+    if data is None:
+        return None
+    return cls(
+        enum_field=EnumClass(data["enum_field"]) if "enum_field" in data and data["enum_field"] is not None else None,
+        nested=NestedClass.from_dict(data["nested"]) if "nested" in data and data["nested"] is not None else None,
+        items=[ItemClass.from_dict(i) for i in data.get("items", [])],
+        flag=data.get("flag"),
+        # ... repeat for all fields
+    )
+```
+
+---
+
+## 4. How to Generate This in Your Script
+
+For each class, emit:
+
+- The standard `@dataclass` and field definitions.
+- The `to_dict` method (may be shared as a single template).
+- The `from_dict` method:
+    - For each field, codegen the correct conversion based on the field type (enum, dataclass, list, primitive).
+    - Optionals: add `None` checks.
+
+### Example Codegen for a Class
+
+Suppose schema gives:
+
+```python
+@dataclass
+class ColumnInfo:
+    name: str
+    type: str
+    nullable: YesNoEnum
+    details: Optional[Details]
+    history: List[HistoryItem]
+```
+
+The generator would emit:
+
+```python
+def to_dict(self) -> dict:
+    def convert(val):
+        if isinstance(val, Enum):
+            return val.value
+        elif dataclasses.is_dataclass(val):
+            return val.to_dict()
+        elif isinstance(val, list):
+            return [convert(v) for v in val]
+        elif isinstance(val, dict):
+            return {k: convert(v) for k, v in val.items()}
+        else:
+            return val
+    return {f: convert(getattr(self, f)) for f in self.__dataclass_fields__}
+
+@classmethod
+def from_dict(cls, data: dict) -> "ColumnInfo":
+    if data is None:
+        return None
+    return cls(
+        name=data.get("name"),
+        type=data.get("type"),
+        nullable=YesNoEnum(data["nullable"]) if "nullable" in data and data["nullable"] is not None else None,
+        details=Details.from_dict(data["details"]) if "details" in data and data["details"] is not None else None,
+        history=[HistoryItem.from_dict(x) for x in data.get("history", [])],
+    )
+```
+
+---
+
+## 5. Full Example: Minimal Working Model
+
+Here’s a self-contained demonstration for a typical class tree:
+
+```python
+from dataclasses import dataclass
+from enum import Enum
+from typing import List, Optional
+import dataclasses
+
+class YesNoEnum(Enum):
+    YES = "YES"
+    NO = "NO"
+
+@dataclass
+class Details:
+    detail_type: str
+
+    def to_dict(self):
+        return {"detail_type": self.detail_type}
+
+    @classmethod
+    def from_dict(cls, d):
+        if d is None:
+            return None
+        return cls(detail_type=d.get("detail_type"))
+
+@dataclass
+class HistoryItem:
+    event: str
+
+    def to_dict(self):
+        return {"event": self.event}
+
+    @classmethod
+    def from_dict(cls, d):
+        if d is None:
+            return None
+        return cls(event=d.get("event"))
+
+@dataclass
+class ColumnInfo:
+    name: str
+    type: str
+    nullable: YesNoEnum
+    details: Optional[Details]
+    history: List[HistoryItem]
+
+    def to_dict(self):
+        def convert(val):
+            if isinstance(val, Enum):
+                return val.value
+            elif dataclasses.is_dataclass(val):
+                return val.to_dict()
+            elif isinstance(val, list):
+                return [convert(v) for v in val]
+            elif isinstance(val, dict):
+                return {k: convert(v) for k, v in val.items()}
+            else:
+                return val
+        return {f: convert(getattr(self, f)) for f in self.__dataclass_fields__}
+
+    @classmethod
+    def from_dict(cls, data):
+        if data is None:
+            return None
+        return cls(
+            name=data.get("name"),
+            type=data.get("type"),
+            nullable=YesNoEnum(data["nullable"]) if "nullable" in data and data["nullable"] is not None else None,
+            details=Details.from_dict(data["details"]) if "details" in data and data["details"] is not None else None,
+            history=[HistoryItem.from_dict(x) for x in data.get("history", [])],
+        )
+```
+
+---
+
+## 6. Generator Pseudocode
+
+In your `SchemaToDataclassGenerator`, update `_generate_dataclass` to emit `from_dict` and `to_dict` by iterating over the schema properties:
+
+```pseudo
+for field_name, field_def in properties.items():
+    if field is enum:
+        line = '{field_name}=EnumClass(data["{field_name}"]) if "{field_name}" in data and data["{field_name}"] is not None else None,'
+    elif field is dataclass:
+        line = '{field_name}=ClassName.from_dict(data["{field_name}"]) if "{field_name}" in data and data["{field_name}"] is not None else None,'
+    elif field is list of dataclass:
+        line = '{field_name}=[ClassName.from_dict(x) for x in data.get("{field_name}", [])],'
+    else:
+        line = '{field_name}=data.get("{field_name}"),'
+```
+
+---
+
+## 7. Testing and Validation
+
+- **Unit test** each class: `assert Model.from_dict(model.to_dict()) == model`
+- **Test round-trip** on real JSON from your schema.
+- **Validate** against your original JSON Schema if possible.
+
+---
+
+## 8. References
+
+- [dataclasses.asdict limitations](https://docs.python.org/3/library/dataclasses.html#dataclasses.asdict)
+- [dacite: dataclass deserialization](https://github.com/konradhalas/dacite)
+- [PEP 563: Postponed Evaluation of Annotations](https://peps.python.org/pep-0563/)
+
+---
+
+## 9. Summary Table: Type Mapping
+
+| JSON Schema Type | Python Type Hint                | to_dict logic         | from_dict logic                                  |
+|------------------|---------------------------------|----------------------|--------------------------------------------------|
+| string           | str                             | as is                | as is                                            |
+| string enum      | Enum                            | .value               | EnumClass(value)                                 |
+| integer          | int                             | as is                | as is                                            |
+| number           | float                           | as is                | as is                                            |
+| boolean          | bool                            | as is                | as is                                            |
+| object/$ref      | dataclass                       | .to_dict()           | DataclassClass.from_dict(value)                  |
+| array of objects | List[dataclass]                 | [x.to_dict() for x]  | [DataclassClass.from_dict(x) for x in value]     |
+| array of enums   | List[Enum]                      | [x.value for x in l] | [EnumClass(x) for x in value]                    |
+| optional         | Optional[...]                   | as is or None        | as is or None                                    |
+
+---
+
+## 10. Next Steps
+
+- **Integrate the templates above into your generator** so each class gets explicit `from_dict` and `to_dict`.
+- **Test** with real data.
+- **Ask for a codegen template** for your specific schema if you want further automation.
+
+---
+
+**Reach out if you want a full code block for your generator to emit these methods automatically for each class!**

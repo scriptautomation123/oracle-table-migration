@@ -129,10 +129,14 @@ class EnvironmentConfigManager:
 
     def _parse_config(self, config: Dict[str, Any]) -> EnvironmentConfig:
         """Parse configuration dictionary into EnvironmentConfig object"""
-        tablespaces = TablespaceConfig(
+        from lib.migration_models import DataTablespaces
+        
+        tablespace_config = TablespaceConfig(
             primary=config["tablespaces"]["data"]["primary"],
             lob=config["tablespaces"]["data"]["lob"],
         )
+        
+        tablespaces = DataTablespaces(data=tablespace_config)
 
         subpartition_defaults = SubpartitionDefaults(
             min_count=config["subpartition_defaults"]["min_count"],
@@ -149,8 +153,7 @@ class EnvironmentConfigManager:
         )
 
         return EnvironmentConfig(
-            environment=config["environment"],
-            description=config["description"],
+            name=config["environment"],
             tablespaces=tablespaces,
             subpartition_defaults=subpartition_defaults,
             parallel_defaults=parallel_defaults,
@@ -209,9 +212,9 @@ class EnvironmentConfigManager:
 
         # Fall back to environment defaults
         if not data_tablespace:
-            data_tablespace = config.tablespaces.primary
+            data_tablespace = config.tablespaces.data.primary
         if not lob_tablespaces:
-            lob_tablespaces = config.tablespaces.lob
+            lob_tablespaces = config.tablespaces.data.lob
 
         return {"data": data_tablespace, "lob": lob_tablespaces}
 

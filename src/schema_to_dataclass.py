@@ -222,35 +222,89 @@ class SchemaToDataclassGenerator:
 
         content += "\n".join(fields)
 
-        # Add serialization methods
+        # Add serialization methods - use explicit field-by-field approach per Principal Engineer guidance
         content += "\n\n    def to_dict(self) -> Dict[str, Any]:\n"
-        content += '        """Convert to dictionary for JSON serialization"""\n'
-        content += "        result = asdict(self)\n"
-        content += "        # Recursively convert enums and nested objects\n"
-        content += "        def convert_value(val):\n"
+        content += '        """Convert to dictionary for JSON serialization - explicit recursive conversion"""\n'
+        content += "        import dataclasses\n"
+        content += "        def convert(val):\n"
         content += "            if isinstance(val, Enum):\n"
         content += "                return val.value\n"
-        content += "            elif isinstance(val, dict):\n"
-        content += (
-            "                return {k: convert_value(v) for k, v in val.items()}\n"
-        )
+        content += "            elif dataclasses.is_dataclass(val):\n"
+        content += "                return val.to_dict()\n"
         content += "            elif isinstance(val, list):\n"
-        content += "                return [convert_value(item) for item in val]\n"
-        content += "            return val\n"
-        content += "        return convert_value(result)\n\n"
+        content += "                return [convert(v) for v in val]\n"
+        content += "            elif isinstance(val, dict):\n"
+        content += "                return {k: convert(v) for k, v in val.items()}\n"
+        content += "            else:\n"
+        content += "                return val\n"
+        content += "        result = {f.name: convert(getattr(self, f.name)) for f in self.__dataclass_fields__.values()}\n"
+
+        # For ColumnInfo, remove identity fields if not an identity column
+        if class_name == "ColumnInfo":
+            content += "        # Remove identity-specific fields if this is not an identity column\n"
+            content += "        if hasattr(self, 'is_identity') and not self.is_identity:\n"
+            content += "            identity_fields = [\n"
+            content += "                'identity_generation', 'identity_sequence', 'identity_start_with',\n"
+            content += "                'identity_increment_by', 'identity_max_value', 'identity_min_value',\n"
+            content += "                'identity_cache_size', 'identity_cycle_flag', 'identity_order_flag'\n"
+            content += "            ]\n"
+            content += "            for field in identity_fields:\n"
+            content += "                result.pop(field, None)\n"
+
+        content += "        return result\n"
 
         content += "    @classmethod\n"
         content += f'    def from_dict(cls, data: Dict[str, Any]) -> "{class_name}":\n'
         content += '        """Create instance from dictionary with proper type conversions"""\n'
-        # Convert string enum values back to enum instances - we need properties dict
         content += "        if data is None:\n"
         content += "            return None\n"
+        content += "        return cls(\n"
 
-        # For each field that might be an enum or nested object, add conversion logic
-        # This is complex - we'll generate specific conversion logic per class
-        # For now, let's keep it simple and let from_dict handle basic cases
-        # Nested objects will be handled when we call their from_dict methods
-        content += "        return cls(**data)\n"
+        # Generate explicit field-by-field conversion per Principal Engineer guidance
+        for field_name, field_def in properties.items():
+            field_type, field_imports, field_deps = self._get_python_type(field_def)
+            is_optional = "Optional" in field_type or field_name not in required
+            schema_default = field_def.get("default")
+            default_value = self._format_default_for_from_dict(schema_default)
+
+            # Determine conversion logic based on type
+            if "Enum" in field_type:
+                enum_name = field_type.split("[")[0].strip()
+                if is_optional:
+                    content += f'            {field_name}={enum_name}(data["{field_name}"]) if "{field_name}" in data and data["{field_name}"] is not None else {default_value},\n'
+                else:
+                    content += f'            {field_name}={enum_name}(data["{field_name}"]) if "{field_name}" in data else {default_value},\n'
+            elif "List[" in field_type:
+                # Extract inner type from List[InnerType]
+                inner_type = field_type.split("[")[1].split("]")[0]
+                if inner_type in self.enums or "Enum" in inner_type:
+                    # List of enums
+                    content += f'            {field_name}=[{inner_type}(x) for x in data.get("{field_name}", [])],\n'
+                elif inner_type in dependencies:
+                    # List of dataclasses
+                    content += f'            {field_name}=[{inner_type}.from_dict(x) for x in data.get("{field_name}", [])],\n'
+                else:
+                    # Primitive list
+                    content += f'            {field_name}=data.get("{field_name}", []),\n'
+            elif field_type in dependencies:
+                # Nested dataclass
+                if is_optional:
+                    content += f'            {field_name}={field_type}.from_dict(data["{field_name}"]) if "{field_name}" in data and data["{field_name}"] is not None else None,\n'
+                else:
+                    content += f'            {field_name}={field_type}.from_dict(data["{field_name}"]) if "{field_name}" in data else None,\n'
+            else:
+                # Primitive type - use schema default if available
+                if schema_default is not None:
+                    content += f'            {field_name}=data.get("{field_name}", {default_value}),\n'
+                elif field_type == "bool":
+                    # Booleans should default to False if not present
+                    content += f'            {field_name}=data.get("{field_name}", False),\n'
+                elif is_optional:
+                    content += f'            {field_name}=data.get("{field_name}"),\n'
+                else:
+                    content += f'            {field_name}=data["{field_name}"],\n'
+
+        content += "        )\n"
 
         self.generated_classes.append(
             GeneratedClass(
@@ -346,6 +400,18 @@ class SchemaToDataclassGenerator:
             else:
                 return "None"
         return None
+
+    def _format_default_for_from_dict(self, default_value) -> str:
+        """Format a schema default value for use in from_dict"""
+        if default_value is None:
+            return "None"
+        if isinstance(default_value, bool):
+            return str(default_value)
+        if isinstance(default_value, (int, float)):
+            return str(default_value)
+        if isinstance(default_value, str):
+            return f'"{default_value}"'
+        return "None"
 
     def _to_class_name(self, name: str) -> str:
         """Convert snake_case to PascalCase"""

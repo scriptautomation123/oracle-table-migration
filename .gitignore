@@ -25,6 +25,7 @@ test-review*.txt
 *.swp
 *.swo
 .trunk/
+*venv/
 
 # OS
 .DS_Store

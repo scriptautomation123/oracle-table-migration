@@ -420,7 +420,11 @@ class DiscoveryCommand(MigrationCommand):
 
         try:
             with database_service.connection() as connection:
-                discovery = TableDiscovery(connection, self.config.environment)
+                discovery = TableDiscovery(
+                    connection,
+                    self.config.environment,
+                    self.config.connection_string
+                )
                 config = discovery.discover_schema(
                     self.schema, self.include_patterns, self.exclude_patterns
                 )
