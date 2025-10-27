@@ -1453,7 +1453,7 @@ class TableDiscovery:
         """Build typed connection details"""
         if not self.connection_string:
             return ConnectionDetails(
-                type="Unknown",
+                type="Service Name",
                 host="Unknown",
                 port="Unknown",
                 service="Unknown",
@@ -1479,17 +1479,34 @@ class TableDiscovery:
                         service=service,
                         user=user,
                     )
+                elif ":" in conn_part:
+                    host, port = conn_part.rsplit(":", 1)
+                    return ConnectionDetails(
+                        type="SID",
+                        host=host,
+                        port=port,
+                        service=conn_part,
+                        user=user,
+                    )
+                else:
+                    return ConnectionDetails(
+                        type="Easy Connect",
+                        host="Unknown",
+                        port="Unknown",
+                        service=conn_part,
+                        user=user,
+                    )
 
             return ConnectionDetails(
-                type="Unknown",
+                type="Service Name",
                 host="Unknown",
                 port="Unknown",
-                service="Unknown",
+                service=self.connection_string,
                 user="Unknown",
             )
         except Exception:
             return ConnectionDetails(
-                type="Error",
+                type="Service Name",
                 host="Unknown",
                 port="Unknown",
                 service="Unknown",
