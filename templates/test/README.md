@@ -5,7 +5,7 @@
 This directory contains the comprehensive E2E test framework for the Oracle table migration system. The test runner executes the complete workflow following the exact data flow architecture:
 
 ```
-Schema (JSON) → Models (Python) → Discovery (Oracle) → JSON Config → 
+Schema (JSON) → Models (Python) → Discovery (Oracle) → JSON Config →
 Generation (Templates) → SQL Output → Execution (Oracle)
 ```
 
@@ -160,40 +160,49 @@ Human-readable report with:
 The complete data flow follows this architecture:
 
 ### 1. Schema Definition
+
 - Source: `lib/enhanced_migration_schema.json`
 - Type: JSON Schema
 - Purpose: Single source of truth for all data structures
 
 ### 2. Model Generation
+
 ```bash
 python3 src/schema_to_dataclass.py
 ```
+
 - Output: `lib/migration_models.py`
 - Type: Python dataclasses
 - Purpose: Type-safe Python classes with serialization
 
 ### 3. Schema Discovery
+
 ```bash
 python3 src/generate.py --discover --schema SCHEMA --connection CONN_STRING
 ```
+
 - Input: Real Oracle database connection
 - Output: `migration_config.json`
 - Type: Validated JSON matching schema
 - Purpose: Discovered table metadata, constraints, indexes
 
 ### 4. DDL Generation
+
 ```bash
 python3 src/generate.py --config path/to/config.json
 ```
+
 - Input: `migration_config.json`
 - Output: SQL scripts (master1.sql, 10_create_table.sql, etc.)
 - Type: Executable Oracle DDL
 - Purpose: Complete migration scripts
 
 ### 5. SQL Execution
+
 ```bash
 sqlcl user/pass@db @output/TABLE/master1.sql
 ```
+
 - Input: Generated SQL files
 - Output: Executed migration in Oracle
 - Purpose: Complete table re-partitioning migration
@@ -261,6 +270,7 @@ echo $ORACLE_SCHEMA
 ### Schema Not Found
 
 Ensure the test schema exists:
+
 ```bash
 sqlcl $ORACLE_CONN << 'EOF'
 SELECT table_name FROM all_tables WHERE owner = 'APP_DATA_OWNER';
@@ -270,6 +280,7 @@ EOF
 ### Generated Files Missing
 
 Check generation logs:
+
 ```bash
 cat output/run_*/02_generation/generation.log
 ```

@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC3037,SC2034
 # ===================================================================
 # Unified Wrapper - User-Friendly Oracle Migration Interface
 # ===================================================================
@@ -9,7 +10,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-RUNNER="$SCRIPT_DIR/unified_runner.sh"
+RUNNER="${SCRIPT_DIR}/unified_runner.sh"
 
 # Colors
 RED='\033[0;31m'
@@ -21,7 +22,7 @@ NC='\033[0m'
 
 # Print usage
 print_usage() {
-    cat << EOF
+	cat <<EOF
 ${CYAN}Oracle Migration Unified Wrapper${NC}
 
 ${GREEN}USAGE:${NC}
@@ -78,80 +79,80 @@ CONNECTION=""
 VERBOSE=false
 
 # Get connection
-if [ -z "$CONNECTION" ] && [ -n "$ORACLE_CONN" ]; then
-    CONNECTION="$ORACLE_CONN"
+if [ -z "${CONNECTION}" ] && [ -n "${ORACLE_CONN}" ]; then
+	CONNECTION="${ORACLE_CONN}"
 fi
 
 # Main dispatch
 if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-    print_usage
-    exit 0
+	print_usage
+	exit 0
 fi
 
 COMMAND="$1"
 shift
 
-case "$COMMAND" in
-    validate|v)
-        TYPE="validation"
-        OPERATION="$1"
-        shift
-        
-        # Parse remaining args
-        while [ $# -gt 0 ]; do
-            case "$1" in
-                -c|--connection)
-                    CONNECTION="$2"
-                    shift 2
-                    ;;
-                *)
-                    ARGS="$ARGS $1"
-                    shift
-                    ;;
-            esac
-        done
-        
-        if [ -z "$CONNECTION" ]; then
-            echo -e "${RED}ERROR: Connection string required${NC}"
-            echo "Use -c or set ORACLE_CONN"
-            exit 1
-        fi
-        
-        $RUNNER validation "$CONNECTION" "$OPERATION" $ARGS
-        ;;
-        
-    migrate|m)
-        TYPE="migration"
-        MODE="$1"
-        OWNER="$2"
-        TABLE="$3"
-        shift 3
-        
-        # Parse remaining args
-        while [ $# -gt 0 ]; do
-            case "$1" in
-                -c|--connection)
-                    CONNECTION="$2"
-                    shift 2
-                    ;;
-                *)
-                    shift
-                    ;;
-            esac
-        done
-        
-        if [ -z "$CONNECTION" ]; then
-            echo -e "${RED}ERROR: Connection string required${NC}"
-            echo "Use -c or set ORACLE_CONN"
-            exit 1
-        fi
-        
-        $RUNNER migration "$MODE" "$OWNER" "$TABLE" "$CONNECTION"
-        ;;
-        
-    *)
-        echo -e "${RED}ERROR: Unknown command: $COMMAND${NC}"
-        echo "Valid commands: validate, migrate"
-        exit 1
-        ;;
+case "${COMMAND}" in
+validate | v)
+	TYPE="validation"
+	OPERATION="$1"
+	shift
+
+	# Parse remaining args
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-c | --connection)
+			CONNECTION="$2"
+			shift 2
+			;;
+		*)
+			ARGS="${ARGS} $1"
+			shift
+			;;
+		esac
+	done
+
+	if [ -z "${CONNECTION}" ]; then
+		echo -e "${RED}ERROR: Connection string required${NC}"
+		echo "Use -c or set ORACLE_CONN"
+		exit 1
+	fi
+
+	${RUNNER} validation "${CONNECTION}" "${OPERATION}" "${ARGS}"
+	;;
+
+migrate | m)
+	TYPE="migration"
+	MODE="$1"
+	OWNER="$2"
+	TABLE="$3"
+	shift 3
+
+	# Parse remaining args
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-c | --connection)
+			CONNECTION="$2"
+			shift 2
+			;;
+		*)
+			shift
+			;;
+		esac
+	done
+
+	if [ -z "${CONNECTION}" ]; then
+		echo -e "${RED}ERROR: Connection string required${NC}"
+		echo "Use -c or set ORACLE_CONN"
+		exit 1
+	fi
+
+	${RUNNER} migration "${MODE}" "${OWNER}" "${TABLE}" "${CONNECTION}"
+	;;
+
+*)
+	echo -e "${RED}ERROR: Unknown command: ${COMMAND}${NC}"
+	echo "Valid commands: validate, migrate"
+	exit 1
+	;;
 esac

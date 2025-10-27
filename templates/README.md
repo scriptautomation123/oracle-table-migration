@@ -10,26 +10,26 @@ These templates will be used by the script generator in Phase 3 to create per-ta
 
 ### Numbered Scripts (10-70)
 
-| Script | Purpose | Duration | Rollback Safe |
-|--------|---------|----------|---------------|
-| `10_create_table.sql` | Create new INTERVAL-HASH partitioned table | 1-5 min | ✓ Yes |
-| `20_data_load.sql` | Initial bulk data load with parallel INSERT | Variable* | ✓ Yes |
-| `30_create_indexes.sql` | Rebuild all indexes on new table | Variable** | ✓ Yes |
-| `40_delta_load.sql` | Incremental sync using timestamp-based MERGE | 5-30 min | ✓ Yes |
-| `50_swap_tables.sql` | Rename tables (cutover point) | < 1 min | ⚠ Partial*** |
-| `60_restore_grants.sql` | Restore privileges and synonyms | 1-5 min | ✓ Yes |
-| `70_drop_old_table.sql` | Drop old table (after validation) | 1-5 min | ✗ No |
+| Script                  | Purpose                                      | Duration     | Rollback Safe    |
+| ----------------------- | -------------------------------------------- | ------------ | ---------------- |
+| `10_create_table.sql`   | Create new INTERVAL-HASH partitioned table   | 1-5 min      | ✓ Yes            |
+| `20_data_load.sql`      | Initial bulk data load with parallel INSERT  | Variable\*   | ✓ Yes            |
+| `30_create_indexes.sql` | Rebuild all indexes on new table             | Variable\*\* | ✓ Yes            |
+| `40_delta_load.sql`     | Incremental sync using timestamp-based MERGE | 5-30 min     | ✓ Yes            |
+| `50_swap_tables.sql`    | Rename tables (cutover point)                | < 1 min      | ⚠ Partial\*\*\* |
+| `60_restore_grants.sql` | Restore privileges and synonyms              | 1-5 min      | ✓ Yes            |
+| `70_drop_old_table.sql` | Drop old table (after validation)            | 1-5 min      | ✗ No             |
 
 \* Data load: ~8 GB/hour (conservative estimate)  
-\** Index creation: ~0.75 hours per index  
-\*** Swap is fast but requires both tables to exist for rollback
+\*\* Index creation: ~0.75 hours per index  
+\*\*\* Swap is fast but requires both tables to exist for rollback
 
 ### Master Scripts
 
-| Script | Purpose | Executes Steps |
-|--------|---------|----------------|
-| `master1.sql` | Pre-migration setup and validation | 10, 20, 30 |
-| `master2.sql` | Cutover and finalization | 40, 50, 60 |
+| Script        | Purpose                            | Executes Steps |
+| ------------- | ---------------------------------- | -------------- |
+| `master1.sql` | Pre-migration setup and validation | 10, 20, 30     |
+| `master2.sql` | Cutover and finalization           | 40, 50, 60     |
 
 ## Template Variables
 
@@ -41,45 +41,45 @@ All templates use **double-brace notation** for variable substitution:
 
 ### Common Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{OWNER}}` | Table owner/schema | `MYSCHEMA` |
-| `{{TABLE_NAME}}` | Original table name | `IE_PC_OFFER_IN` |
-| `{{NEW_TABLE_NAME}}` | New table name | `IE_PC_OFFER_IN_NEW` |
-| `{{OLD_TABLE_NAME}}` | Old table after swap | `IE_PC_OFFER_IN_OLD` |
-| `{{TABLESPACE}}` | Tablespace name | `USERS` |
-| `{{PARALLEL_DEGREE}}` | Parallel DML/DDL degree | `4`, `8`, `16` |
+| Variable              | Description             | Example              |
+| --------------------- | ----------------------- | -------------------- |
+| `{{OWNER}}`           | Table owner/schema      | `MYSCHEMA`           |
+| `{{TABLE_NAME}}`      | Original table name     | `IE_PC_OFFER_IN`     |
+| `{{NEW_TABLE_NAME}}`  | New table name          | `IE_PC_OFFER_IN_NEW` |
+| `{{OLD_TABLE_NAME}}`  | Old table after swap    | `IE_PC_OFFER_IN_OLD` |
+| `{{TABLESPACE}}`      | Tablespace name         | `USERS`              |
+| `{{PARALLEL_DEGREE}}` | Parallel DML/DDL degree | `4`, `8`, `16`       |
 
 ### Structure Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{COLUMN_DEFINITIONS}}` | DDL column definitions | `ID NUMBER(10), NAME VARCHAR2(100), ...` |
-| `{{COLUMN_LIST}}` | Comma-separated columns | `ID, NAME, CREATE_DATE, BLOB_DATA` |
-| `{{PARTITION_KEY}}` | Partition key column | `AUDIT_CREATE_DATE` |
-| `{{PRIMARY_KEY}}` | Primary key column(s) | `ID` |
-| `{{TIMESTAMP_COLUMN}}` | Audit timestamp column | `LAST_UPDATE_DATE` |
+| Variable                 | Description             | Example                                  |
+| ------------------------ | ----------------------- | ---------------------------------------- |
+| `{{COLUMN_DEFINITIONS}}` | DDL column definitions  | `ID NUMBER(10), NAME VARCHAR2(100), ...` |
+| `{{COLUMN_LIST}}`        | Comma-separated columns | `ID, NAME, CREATE_DATE, BLOB_DATA`       |
+| `{{PARTITION_KEY}}`      | Partition key column    | `AUDIT_CREATE_DATE`                      |
+| `{{PRIMARY_KEY}}`        | Primary key column(s)   | `ID`                                     |
+| `{{TIMESTAMP_COLUMN}}`   | Audit timestamp column  | `LAST_UPDATE_DATE`                       |
 
 ### Partitioning Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{INTERVAL_CLAUSE}}` | Interval definition | `NUMTOYMINTERVAL(1,'MONTH')` |
-| `{{HASH_SUBPARTS}}` | Number of hash subpartitions | `4`, `8`, `12`, `16` |
+| Variable                      | Description                  | Example                               |
+| ----------------------------- | ---------------------------- | ------------------------------------- |
+| `{{INTERVAL_CLAUSE}}`         | Interval definition          | `NUMTOYMINTERVAL(1,'MONTH')`          |
+| `{{HASH_SUBPARTS}}`           | Number of hash subpartitions | `4`, `8`, `12`, `16`                  |
 | `{{INITIAL_PARTITION_VALUE}}` | Initial partition high value | `TO_DATE('2024-01-01', 'YYYY-MM-DD')` |
 
 ### Complex Variables
 
-| Variable | Description | Format |
-|----------|-------------|--------|
-| `{{LOB_STORAGE_CLAUSES}}` | LOB storage specifications | `LOB (BLOB_COL) STORE AS SECUREFILE ...` |
-| `{{INDEX_DEFINITIONS}}` | All CREATE INDEX statements | Multiple CREATE INDEX commands |
-| `{{GRANT_STATEMENTS}}` | All GRANT statements | Multiple GRANT commands |
-| `{{UPDATE_SET_CLAUSE}}` | MERGE UPDATE clause | `col1 = src.col1, col2 = src.col2, ...` |
-| `{{PRIMARY_KEY_MATCH_CONDITION}}` | JOIN condition for MERGE | `tgt.id = src.id` |
-| `{{CUTOFF_TIMESTAMP}}` | Delta load cutoff time | `2025-10-21 14:30:00` |
-| `{{SCRIPT_DIR}}` | Path to numbered scripts | `/path/to/scripts` |
-| `{{TIMESTAMP}}` | Current timestamp for logs | `20251021_143000` |
+| Variable                          | Description                 | Format                                   |
+| --------------------------------- | --------------------------- | ---------------------------------------- |
+| `{{LOB_STORAGE_CLAUSES}}`         | LOB storage specifications  | `LOB (BLOB_COL) STORE AS SECUREFILE ...` |
+| `{{INDEX_DEFINITIONS}}`           | All CREATE INDEX statements | Multiple CREATE INDEX commands           |
+| `{{GRANT_STATEMENTS}}`            | All GRANT statements        | Multiple GRANT commands                  |
+| `{{UPDATE_SET_CLAUSE}}`           | MERGE UPDATE clause         | `col1 = src.col1, col2 = src.col2, ...`  |
+| `{{PRIMARY_KEY_MATCH_CONDITION}}` | JOIN condition for MERGE    | `tgt.id = src.id`                        |
+| `{{CUTOFF_TIMESTAMP}}`            | Delta load cutoff time      | `2025-10-21 14:30:00`                    |
+| `{{SCRIPT_DIR}}`                  | Path to numbered scripts    | `/path/to/scripts`                       |
+| `{{TIMESTAMP}}`                   | Current timestamp for logs  | `20251021_143000`                        |
 
 ## Template Features
 
@@ -92,7 +92,7 @@ All templates include:
 ✅ **Progress tracking** - Detailed DBMS_OUTPUT logging  
 ✅ **Row count verification** - Compare source vs target after each step  
 ✅ **Duration tracking** - Measure execution time for each operation  
-✅ **Rollback guidance** - Clear instructions for reverting changes  
+✅ **Rollback guidance** - Clear instructions for reverting changes
 
 ### User Confirmations
 
@@ -111,6 +111,7 @@ INSERT /*+ APPEND PARALLEL({{PARALLEL_DEGREE}}) */ INTO ...
 ```
 
 Recommended parallel degrees:
+
 - Small tables (< 10 GB): 4
 - Medium tables (10-50 GB): 8
 - Large tables (> 50 GB): 12-16
@@ -192,7 +193,7 @@ BEGIN
     SELECT COUNT(*) INTO v_custom_check
     FROM {{OWNER}}.{{TABLE_NAME}}
     WHERE your_business_rule_check;
-    
+
     IF v_custom_check > 0 THEN
         RAISE_APPLICATION_ERROR(-20999, 'Business rule validation failed');
     END IF;
@@ -249,6 +250,7 @@ master2_migration_{{TABLE_NAME}}_{{TIMESTAMP}}.log
 ```
 
 Log contents:
+
 - Execution timestamps for each step
 - Row counts before/after each operation
 - Index creation progress
@@ -262,7 +264,7 @@ Log contents:
 
 ```sql
 -- Calculate based on table size
-PARALLEL_DEGREE = CASE 
+PARALLEL_DEGREE = CASE
     WHEN size_gb > 100 THEN 16
     WHEN size_gb > 50  THEN 12
     WHEN size_gb > 10  THEN 8
@@ -274,7 +276,7 @@ END
 
 ```sql
 -- Calculate based on table size
-HASH_SUBPARTS = CASE 
+HASH_SUBPARTS = CASE
     WHEN size_gb > 100 THEN 16
     WHEN size_gb > 50  THEN 12
     WHEN size_gb > 10  THEN 8
@@ -301,7 +303,8 @@ END
 
 **Symptom**: Source and target have different row counts
 
-**Solution**: 
+**Solution**:
+
 1. Check for active writes during migration
 2. Run `40_delta_load.sql` again
 3. Verify timestamp column is correctly set

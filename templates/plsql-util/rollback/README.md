@@ -9,9 +9,10 @@ Fast emergency rollback procedure for reverting table migration when critical is
 ## When to Use
 
 Use emergency rollback when:
+
 - Production outage due to migration
 - Critical data corruption detected
-- Application completely non-functional  
+- Application completely non-functional
 - Immediate restoration required
 
 ## Usage
@@ -21,6 +22,7 @@ sqlplus user/pass@db @emergency_rollback.sql
 ```
 
 **Interactive Prompts**:
+
 - Table owner (optional, defaults to current user)
 - Table name
 - Confirmation: Type `EMERGENCY` to proceed
@@ -58,6 +60,7 @@ Step 6: Report Status
 ⚠️ **Data inserted/updated after cutover timestamp will be lost**
 
 Example:
+
 ```bash
 Cutover: 2025-10-22 14:00:00
 Inserts: 50 new orders at 14:10:00
@@ -154,12 +157,14 @@ DROP TABLE schema.table_name_EMERG_timestamp CASCADE CONSTRAINTS PURGE;
 
 ### "Cannot rollback - no backup table found"
 
-**Cause**: _OLD table was already dropped
+**Cause**: \_OLD table was already dropped
 
 **Options**:
+
 1. Check for emergency backup: `table_name_EMERG_*`
 2. Restore from database backup
 3. If new table has correct data, rename it:
+
 ```sql
 ALTER TABLE schema.table_name_NEW RENAME TO table_name;
 ```
@@ -167,6 +172,7 @@ ALTER TABLE schema.table_name_NEW RENAME TO table_name;
 ### "Some indexes are invalid after rollback"
 
 **Solution**:
+
 ```sql
 -- Rebuild invalid indexes
 SELECT 'ALTER INDEX ' || owner || '.' || index_name || ' REBUILD PARALLEL 4;'
@@ -179,11 +185,12 @@ WHERE table_owner = 'SCHEMA'
 ### Rollback fails mid-process
 
 **Manual Recovery**:
+
 ```sql
 -- Check what tables exist
-SELECT table_name 
-FROM all_tables 
-WHERE owner = 'SCHEMA' 
+SELECT table_name
+FROM all_tables
+WHERE owner = 'SCHEMA'
   AND table_name LIKE 'TABLE_NAME%';
 
 -- If needed, restore from recyclebin
@@ -196,17 +203,20 @@ ALTER TABLE schema.current_name RENAME TO correct_name;
 ## Best Practices
 
 **Before Migration**:
+
 - ✅ Test rollback in non-production
 - ✅ Document rollback plan
 - ✅ Verify backup exists and is restorable
 - ✅ Establish communication plan
 
 **During Migration**:
+
 - ✅ Monitor continuously during cutover
 - ✅ Have rollback script ready
 - ✅ Keep team on standby for 1 hour
 
 **After Rollback**:
+
 - ✅ Verify application immediately
 - ✅ Document reason for rollback
 - ✅ Assess data loss

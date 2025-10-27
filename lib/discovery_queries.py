@@ -20,20 +20,38 @@ from typing import Dict, List, Optional
 
 from .environment_config import EnvironmentConfigManager
 from .migration_models import (
-    MigrationConfig, TableConfig, CurrentState, CommonSettings,
-    TargetConfiguration, MigrationSettings, ColumnInfo, LobStorageInfo,
-    StorageParameters, IndexInfo, AvailableColumns, Metadata, 
-    EnvironmentConfig, DataTablespaces, TablespaceConfig,
-    SubpartitionDefaults, ParallelDefaults, SizeRecommendation,
-    ConnectionDetails, PartitionTypeEnum, IntervalTypeEnum, 
-    MigrationActionEnum, YesNoEnum, SubpartitionTypeEnum
+    AvailableColumns,
+    ColumnInfo,
+    CommonSettings,
+    ConnectionDetails,
+    CurrentState,
+    DataTablespaces,
+    EnvironmentConfig,
+    IndexInfo,
+    IntervalTypeEnum,
+    LobStorageInfo,
+    Metadata,
+    MigrationActionEnum,
+    MigrationConfig,
+    MigrationSettings,
+    ParallelDefaults,
+    PartitionTypeEnum,
+    SizeRecommendation,
+    StorageParameters,
+    SubpartitionDefaults,
+    SubpartitionTypeEnum,
+    TableConfig,
+    TablespaceConfig,
+    TargetConfiguration,
 )
 
 
 class TableDiscovery:
     """Discover tables and generate migration configuration"""
 
-    def __init__(self, connection, environment: str = None, connection_string: str = None):
+    def __init__(
+        self, connection, environment: str = None, connection_string: str = None
+    ):
         """
         Initialize discovery with database connection
 
@@ -91,10 +109,10 @@ class TableDiscovery:
         lob_counts = self._get_lob_counts()
         index_counts = self._get_index_counts()
         print("✓ Analyzed LOBs and indexes")
-        
+
         # Step 5: Get constraints and referential integrity
-        constraint_info = self._get_constraint_info()
-        referential_integrity = self._get_referential_integrity()
+        self._get_constraint_info()
+        self._get_referential_integrity()
         print("✓ Analyzed constraints and referential integrity")
 
         # Step 5: For each table, get columns (timestamp, numeric, string)
@@ -122,7 +140,9 @@ class TableDiscovery:
             source_schema=self.schema,
             source_database_service=self._extract_database_service(),
             source_connection_details=connection_details,
-            discovery_criteria=self._format_criteria(include_patterns, exclude_patterns),
+            discovery_criteria=self._format_criteria(
+                include_patterns, exclude_patterns
+            ),
             total_tables_found=len(all_tables),
             tables_selected_for_migration=len([t for t in tables_config if t.enabled]),
             schema=self.schema,  # Keep legacy field for backward compatibility
@@ -135,15 +155,13 @@ class TableDiscovery:
         config = MigrationConfig(
             metadata=metadata,
             environment_config=environment_config,
-            tables=tables_config
+            tables=tables_config,
         )
 
         print(f"\n{'='*70}")
         print("Discovery complete!")
         print(f"  Total tables: {len(all_tables)}")
-        print(
-            f"  Enabled for migration: {metadata.tables_selected_for_migration}"
-        )
+        print(f"  Enabled for migration: {metadata.tables_selected_for_migration}")
         print(f"{'='*70}\n")
 
         return config
@@ -229,11 +247,11 @@ class TableDiscovery:
 
         cursor.close()
         return partition_info
-    
+
     def _get_actual_partition_counts(self) -> Dict[str, int]:
         """Get actual partition counts by counting existing partitions"""
         cursor = self.connection.cursor()
-        
+
         query = """
             SELECT 
                 table_name,
@@ -242,13 +260,13 @@ class TableDiscovery:
             WHERE table_owner = :schema
             GROUP BY table_name
         """
-        
+
         cursor.execute(query, schema=self.schema)
-        
+
         partition_counts = {}
         for row in cursor.fetchall():
             partition_counts[row[0]] = row[1]
-            
+
         cursor.close()
         return partition_counts
 
@@ -493,18 +511,22 @@ class TableDiscovery:
 
         identity_columns = []
         for row in cursor.fetchall():
-            identity_columns.append({
-                "column_name": row[0],
-                "generation_type": row[1],  # 'ALWAYS', 'BY DEFAULT', 'BY DEFAULT ON NULL'
-                "sequence_name": row[2],
-                "min_value": row[3],
-                "max_value": row[4],
-                "increment_value": row[5] or 1,
-                "cache_size": row[6],
-                "cycle_flag": row[7] or 'N',
-                "order_flag": row[8] or 'N',
-                "start_value": row[9] or 1,
-            })
+            identity_columns.append(
+                {
+                    "column_name": row[0],
+                    "generation_type": row[
+                        1
+                    ],  # 'ALWAYS', 'BY DEFAULT', 'BY DEFAULT ON NULL'
+                    "sequence_name": row[2],
+                    "min_value": row[3],
+                    "max_value": row[4],
+                    "increment_value": row[5] or 1,
+                    "cache_size": row[6],
+                    "cycle_flag": row[7] or "N",
+                    "order_flag": row[8] or "N",
+                    "start_value": row[9] or 1,
+                }
+            )
 
         cursor.close()
         return identity_columns
@@ -512,11 +534,11 @@ class TableDiscovery:
     def _get_all_columns_metadata(self, table_name: str) -> List[Dict]:
         """Get complete column metadata for CREATE TABLE statement (Oracle 19c+)"""
         cursor = self.connection.cursor()
-        
+
         # Get identity column information first
         identity_columns = self._get_identity_columns(table_name)
-        identity_map = {col['column_name']: col for col in identity_columns}
-        
+        identity_map = {col["column_name"]: col for col in identity_columns}
+
         try:
             query = """
                 SELECT
@@ -572,7 +594,7 @@ class TableDiscovery:
             # Check if this is an identity column
             identity_info = identity_map.get(col_name)
             is_identity_value = False if identity_info is None else True
-            
+
             column_info = {
                 "name": col_name,
                 "type": data_type,
@@ -586,36 +608,42 @@ class TableDiscovery:
                 "char_length": char_length,
                 "is_identity": is_identity_value,
             }
-            
+
             # Add identity column details if present
             if identity_info:
-                column_info.update({
-                    "identity_generation": identity_info['generation_type'],
-                    "identity_sequence": identity_info['sequence_name'],
-                    "identity_start_with": identity_info.get('start_value', 1),
-                    "identity_increment_by": identity_info.get('increment_value', 1),
-                    "identity_max_value": identity_info.get('max_value'),
-                    "identity_min_value": identity_info.get('min_value'),
-                    "identity_cache_size": identity_info.get('cache_size'),
-                    "identity_cycle_flag": identity_info.get('cycle_flag', 'N'),
-                    "identity_order_flag": identity_info.get('order_flag', 'N'),
-                })
+                column_info.update(
+                    {
+                        "identity_generation": identity_info["generation_type"],
+                        "identity_sequence": identity_info["sequence_name"],
+                        "identity_start_with": identity_info.get("start_value", 1),
+                        "identity_increment_by": identity_info.get(
+                            "increment_value", 1
+                        ),
+                        "identity_max_value": identity_info.get("max_value"),
+                        "identity_min_value": identity_info.get("min_value"),
+                        "identity_cache_size": identity_info.get("cache_size"),
+                        "identity_cycle_flag": identity_info.get("cycle_flag", "N"),
+                        "identity_order_flag": identity_info.get("order_flag", "N"),
+                    }
+                )
             else:
                 # Add default identity fields for non-identity columns
-                column_info.update({
-                    "identity_generation": None,
-                    "identity_sequence": None,
-                    "identity_start_with": None,
-                    "identity_increment_by": None,
-                    "identity_max_value": None,
-                    "identity_min_value": None,
-                    "identity_cache_size": None,
-                    "identity_cycle_flag": None,
-                    "identity_order_flag": None,
-                })
-            
+                column_info.update(
+                    {
+                        "identity_generation": None,
+                        "identity_sequence": None,
+                        "identity_start_with": None,
+                        "identity_increment_by": None,
+                        "identity_max_value": None,
+                        "identity_min_value": None,
+                        "identity_cache_size": None,
+                        "identity_cycle_flag": None,
+                        "identity_order_flag": None,
+                    }
+                )
+
             columns.append(column_info)
-        
+
         cursor.close()
         return columns
 
@@ -864,21 +892,35 @@ class TableDiscovery:
             "is_partitioned": is_partitioned,
             "partition_type": current_partition_type,
             "is_interval": is_interval if is_partitioned else False,
-            "interval_definition": (partition_info.get("interval_definition") or "") if partition_info else "",
-            "current_partition_count": actual_partition_counts.get(table_name, 0) if is_partitioned else 0,
+            "interval_definition": (
+                (partition_info.get("interval_definition") or "")
+                if partition_info
+                else ""
+            ),
+            "current_partition_count": (
+                actual_partition_counts.get(table_name, 0) if is_partitioned else 0
+            ),
             "current_partition_key": (
-                ", ".join(partition_key_columns) if partition_key_columns and is_partitioned else ""
+                ", ".join(partition_key_columns)
+                if partition_key_columns and is_partitioned
+                else ""
             ),
             "has_subpartitions": has_subpartitions if is_partitioned else False,
-            "subpartition_type": (partition_info.get("subpartitioning_type") or "NONE") if partition_info else "NONE",
-            "subpartition_count": partition_info.get("def_subpartition_count", 0) if is_partitioned and partition_info else 0,
+            "subpartition_type": (
+                (partition_info.get("subpartitioning_type") or "NONE")
+                if partition_info
+                else "NONE"
+            ),
+            "subpartition_count": (
+                partition_info.get("def_subpartition_count", 0)
+                if is_partitioned and partition_info
+                else 0
+            ),
             "size_gb": size_gb,
             "row_count": stats.get("num_rows", 0),
             "lob_count": lob_count,
             "index_count": index_count,
         }
-
-
 
         # Determine recommended settings
         recommended_hash_count = self._recommend_hash_count(
@@ -936,27 +978,37 @@ class TableDiscovery:
         try:
             columns_metadata = self._build_columns_metadata(table_name)
         except Exception as e:
-            raise Exception(f"Error in _build_columns_metadata for {table_name}: {e}") from e
-        
+            raise Exception(
+                f"Error in _build_columns_metadata for {table_name}: {e}"
+            ) from e
+
         try:
             lob_storage_details = self._build_lob_storage_details(table_name)
         except Exception as e:
-            raise Exception(f"Error in _build_lob_storage_details for {table_name}: {e}") from e
-        
+            raise Exception(
+                f"Error in _build_lob_storage_details for {table_name}: {e}"
+            ) from e
+
         try:
             storage_params = self._build_storage_parameters(table_name)
         except Exception as e:
-            raise Exception(f"Error in _build_storage_parameters for {table_name}: {e}") from e
-        
+            raise Exception(
+                f"Error in _build_storage_parameters for {table_name}: {e}"
+            ) from e
+
         try:
             index_details = self._build_index_details(table_name)
         except Exception as e:
-            raise Exception(f"Error in _build_index_details for {table_name}: {e}") from e
-        
+            raise Exception(
+                f"Error in _build_index_details for {table_name}: {e}"
+            ) from e
+
         try:
             grants_details = self._build_grants_details(table_name)
         except Exception as e:
-            raise Exception(f"Error in _build_grants_details for {table_name}: {e}") from e
+            raise Exception(
+                f"Error in _build_grants_details for {table_name}: {e}"
+            ) from e
 
         # Build typed available columns
         available_columns = AvailableColumns(
@@ -971,7 +1023,7 @@ class TableDiscovery:
             string_columns=[
                 ColumnInfo(name=col["name"], type=col["type"], nullable=col["nullable"])
                 for col in string_columns
-            ]
+            ],
         )
 
         # Build typed current state
@@ -997,8 +1049,6 @@ class TableDiscovery:
             grants=grants_details,
         )
 
-
-
         # Build typed target configuration
         target_config_obj = TargetConfiguration(
             partition_type=PartitionTypeEnum(target_configuration["partition_type"]),
@@ -1006,7 +1056,9 @@ class TableDiscovery:
             interval_type=IntervalTypeEnum(target_configuration["interval_type"]),
             interval_value=target_configuration["interval_value"],
             initial_partition_value=target_configuration["initial_partition_value"],
-            subpartition_type=SubpartitionTypeEnum(target_configuration["subpartition_type"]),
+            subpartition_type=SubpartitionTypeEnum(
+                target_configuration["subpartition_type"]
+            ),
             subpartition_column=target_configuration["subpartition_column"],
             subpartition_count=target_configuration["subpartition_count"],
             tablespace=target_configuration["tablespace"],
@@ -1083,15 +1135,15 @@ class TableDiscovery:
         try:
             # Parse connection string to extract service name
             # Format: user/pass@host:port/service or user/pass@host:port:sid
-            if '@' in self.connection_string:
-                conn_part = self.connection_string.split('@')[1]
-                if '/' in conn_part:
+            if "@" in self.connection_string:
+                conn_part = self.connection_string.split("@")[1]
+                if "/" in conn_part:
                     # Service name format: host:port/service
-                    service = conn_part.split('/')[-1]
+                    service = conn_part.split("/")[-1]
                     return service
-                elif ':' in conn_part and conn_part.count(':') == 2:
+                elif ":" in conn_part and conn_part.count(":") == 2:
                     # SID format: host:port:sid
-                    service = conn_part.split(':')[-1]
+                    service = conn_part.split(":")[-1]
                     return service
                 else:
                     return conn_part
@@ -1102,19 +1154,24 @@ class TableDiscovery:
     def _extract_connection_details(self) -> Dict[str, str]:
         """Extract connection details for metadata tracking"""
         if not self.connection_string:
-            return {"type": "Unknown", "host": "Unknown", "port": "Unknown", "service": "Unknown"}
+            return {
+                "type": "Unknown",
+                "host": "Unknown",
+                "port": "Unknown",
+                "service": "Unknown",
+            }
 
         try:
             # Parse connection string: user/pass@host:port/service
-            if '@' in self.connection_string:
-                user_part, conn_part = self.connection_string.split('@', 1)
-                user = user_part.split('/')[0] if '/' in user_part else user_part
+            if "@" in self.connection_string:
+                user_part, conn_part = self.connection_string.split("@", 1)
+                user = user_part.split("/")[0] if "/" in user_part else user_part
 
-                if '/' in conn_part:
+                if "/" in conn_part:
                     # Service name format
-                    host_port, service = conn_part.rsplit('/', 1)
-                    if ':' in host_port:
-                        host, port = host_port.rsplit(':', 1)
+                    host_port, service = conn_part.rsplit("/", 1)
+                    if ":" in host_port:
+                        host, port = host_port.rsplit(":", 1)
                     else:
                         host, port = host_port, "1521"
 
@@ -1123,17 +1180,17 @@ class TableDiscovery:
                         "host": host,
                         "port": port,
                         "service": service,
-                        "user": user
+                        "user": user,
                     }
-                elif ':' in conn_part and conn_part.count(':') == 2:
+                elif ":" in conn_part and conn_part.count(":") == 2:
                     # SID format: host:port:sid
-                    parts = conn_part.split(':')
+                    parts = conn_part.split(":")
                     return {
                         "type": "SID",
                         "host": parts[0],
                         "port": parts[1],
                         "service": parts[2],
-                        "user": user
+                        "user": user,
                     }
 
             return {"type": "Unknown", "connection_string": self.connection_string}
@@ -1240,7 +1297,7 @@ class TableDiscovery:
         ]
 
     def _build_grants_details(self, table_name: str) -> List[Dict]:
-        """Build grants details as dictionaries"""  
+        """Build grants details as dictionaries"""
         raw_grants = self._get_table_grants(table_name)
         return [
             {
@@ -1257,35 +1314,47 @@ class TableDiscovery:
         """Build typed connection details"""
         if not self.connection_string:
             return ConnectionDetails(
-                type="Unknown", host="Unknown", port="Unknown", 
-                service="Unknown", user="Unknown"
+                type="Unknown",
+                host="Unknown",
+                port="Unknown",
+                service="Unknown",
+                user="Unknown",
             )
 
         try:
-            if '@' in self.connection_string:
-                user_part, conn_part = self.connection_string.split('@', 1)
-                user = user_part.split('/')[0] if '/' in user_part else user_part
+            if "@" in self.connection_string:
+                user_part, conn_part = self.connection_string.split("@", 1)
+                user = user_part.split("/")[0] if "/" in user_part else user_part
 
-                if '/' in conn_part:
-                    host_port, service = conn_part.rsplit('/', 1)
-                    if ':' in host_port:
-                        host, port = host_port.rsplit(':', 1)
+                if "/" in conn_part:
+                    host_port, service = conn_part.rsplit("/", 1)
+                    if ":" in host_port:
+                        host, port = host_port.rsplit(":", 1)
                     else:
                         host, port = host_port, "1521"
 
                     return ConnectionDetails(
-                        type="Service Name", host=host, port=port, 
-                        service=service, user=user
+                        type="Service Name",
+                        host=host,
+                        port=port,
+                        service=service,
+                        user=user,
                     )
 
             return ConnectionDetails(
-                type="Unknown", host="Unknown", port="Unknown",
-                service="Unknown", user="Unknown"
+                type="Unknown",
+                host="Unknown",
+                port="Unknown",
+                service="Unknown",
+                user="Unknown",
             )
         except Exception:
             return ConnectionDetails(
-                type="Error", host="Unknown", port="Unknown",
-                service="Unknown", user="Unknown"
+                type="Error",
+                host="Unknown",
+                port="Unknown",
+                service="Unknown",
+                user="Unknown",
             )
 
     def _build_environment_config(self) -> EnvironmentConfig:
@@ -1384,32 +1453,36 @@ class TableDiscovery:
                  c.delete_rule, c.r_owner, c.r_constraint_name
         ORDER BY c.table_name, c.constraint_type, c.constraint_name
         """
-        
+
         cursor = self.connection.cursor()
         cursor.execute(query, schema_name=self.schema)
-        
+
         constraint_info = {}
         for row in cursor.fetchall():
             table_name = row[0]
             if table_name not in constraint_info:
                 constraint_info[table_name] = []
-            
-            constraint_info[table_name].append({
-                'constraint_name': row[1],
-                'constraint_type': row[2],
-                'constraint_description': row[13],  # constraint_description is the last column
-                'status': row[3],
-                'validated': row[4],
-                'deferrable': row[5],
-                'deferred': row[6],
-                'rely': row[7],
-                'search_condition': row[8],
-                'delete_rule': row[9],
-                'referenced_table': row[10],
-                'referenced_constraint': row[11],
-                'columns': row[12],  # columns from LISTAGG
-            })
-        
+
+            constraint_info[table_name].append(
+                {
+                    "constraint_name": row[1],
+                    "constraint_type": row[2],
+                    "constraint_description": row[
+                        13
+                    ],  # constraint_description is the last column
+                    "status": row[3],
+                    "validated": row[4],
+                    "deferrable": row[5],
+                    "deferred": row[6],
+                    "rely": row[7],
+                    "search_condition": row[8],
+                    "delete_rule": row[9],
+                    "referenced_table": row[10],
+                    "referenced_constraint": row[11],
+                    "columns": row[12],  # columns from LISTAGG
+                }
+            )
+
         cursor.close()
         return constraint_info
 
@@ -1458,52 +1531,58 @@ class TableDiscovery:
         FROM fk_relationships
         ORDER BY parent_table, child_table
         """
-        
+
         cursor = self.connection.cursor()
         cursor.execute(query, schema_name=self.schema)
-        
+
         relationships = {
-            'parent_child_relationships': [],
-            'dependency_summary': {},
-            'constraint_details': {}
+            "parent_child_relationships": [],
+            "dependency_summary": {},
+            "constraint_details": {},
         }
-        
+
         for row in cursor.fetchall():
             parent_table, child_table = row[0], row[1]
             constraint_name = row[2]
-            
+
             # Add to relationships
-            relationships['parent_child_relationships'].append({
-                'parent_table': parent_table,
-                'child_table': child_table,
-                'constraint_name': constraint_name,
-                'delete_rule': row[3],
-                'parent_columns': row[4],
-                'child_columns': row[5],
-                'dependency_level': row[8]
-            })
-            
-            # Track dependency summary
-            if parent_table not in relationships['dependency_summary']:
-                relationships['dependency_summary'][parent_table] = {
-                    'children_count': 0,
-                    'children': [],
-                    'dependency_level': 'Low Dependency'
+            relationships["parent_child_relationships"].append(
+                {
+                    "parent_table": parent_table,
+                    "child_table": child_table,
+                    "constraint_name": constraint_name,
+                    "delete_rule": row[3],
+                    "parent_columns": row[4],
+                    "child_columns": row[5],
+                    "dependency_level": row[8],
                 }
-            
-            relationships['dependency_summary'][parent_table]['children'].append(child_table)
-            relationships['dependency_summary'][parent_table]['children_count'] = row[7]
-            relationships['dependency_summary'][parent_table]['dependency_level'] = row[8]
-            
+            )
+
+            # Track dependency summary
+            if parent_table not in relationships["dependency_summary"]:
+                relationships["dependency_summary"][parent_table] = {
+                    "children_count": 0,
+                    "children": [],
+                    "dependency_level": "Low Dependency",
+                }
+
+            relationships["dependency_summary"][parent_table]["children"].append(
+                child_table
+            )
+            relationships["dependency_summary"][parent_table]["children_count"] = row[7]
+            relationships["dependency_summary"][parent_table]["dependency_level"] = row[
+                8
+            ]
+
             # Store constraint details
-            relationships['constraint_details'][constraint_name] = {
-                'parent_table': parent_table,
-                'child_table': child_table,
-                'parent_columns': row[4],
-                'child_columns': row[5],
-                'delete_rule': row[3]
+            relationships["constraint_details"][constraint_name] = {
+                "parent_table": parent_table,
+                "child_table": child_table,
+                "parent_columns": row[4],
+                "child_columns": row[5],
+                "delete_rule": row[3],
             }
-        
+
         cursor.close()
         return relationships
 
@@ -1547,40 +1626,42 @@ class TableDiscovery:
                  i.max_trans, i.degree, i.partitioned, ie.column_expression
         ORDER BY i.table_name, index_complexity DESC, i.index_name
         """
-        
+
         cursor = self.connection.cursor()
         cursor.execute(query, schema_name=self.schema)
-        
+
         index_info = {}
         for row in cursor.fetchall():
             table_name = row[0]
             if table_name not in index_info:
                 index_info[table_name] = []
-            
-            index_info[table_name].append({
-                'index_name': row[1],
-                'index_type': row[2],
-                'uniqueness': row[3],
-                'tablespace_name': row[4],
-                'compression': row[5],
-                'pct_free': row[6],
-                'ini_trans': row[7],
-                'max_trans': row[8],
-                'degree': row[9],
-                'partitioned': row[10],
-                'columns': row[11],
-                'column_count': row[12],
-                'column_expression': row[13],
-                'index_complexity': row[14]
-            })
-        
+
+            index_info[table_name].append(
+                {
+                    "index_name": row[1],
+                    "index_type": row[2],
+                    "uniqueness": row[3],
+                    "tablespace_name": row[4],
+                    "compression": row[5],
+                    "pct_free": row[6],
+                    "ini_trans": row[7],
+                    "max_trans": row[8],
+                    "degree": row[9],
+                    "partitioned": row[10],
+                    "columns": row[11],
+                    "column_count": row[12],
+                    "column_expression": row[13],
+                    "index_complexity": row[14],
+                }
+            )
+
         cursor.close()
         return index_info
 
     def _get_table_grants(self, table_name: str) -> List[Dict]:
         """Get all grants/privileges for a specific table"""
         cursor = self.connection.cursor()
-        
+
         query = """
         SELECT 
             grantee,
@@ -1593,26 +1674,28 @@ class TableDiscovery:
         AND grantee NOT IN ('SYS', 'SYSTEM', 'PUBLIC')  -- Exclude system grantees
         ORDER BY grantee, privilege
         """
-        
+
         cursor.execute(query, schema=self.schema, table_name=table_name)
-        
+
         grants = []
         for row in cursor.fetchall():
-            grants.append({
-                'grantee': row[0],
-                'privilege': row[1],
-                'grantable': row[2],
-                'grantor': row[3],
-                'grant_type': 'OBJECT'
-            })
-        
+            grants.append(
+                {
+                    "grantee": row[0],
+                    "privilege": row[1],
+                    "grantable": row[2],
+                    "grantor": row[3],
+                    "grant_type": "OBJECT",
+                }
+            )
+
         cursor.close()
         return grants
 
     def _get_all_table_grants(self) -> Dict[str, List[Dict]]:
         """Get grants information for all tables in schema"""
         cursor = self.connection.cursor()
-        
+
         query = """
         SELECT 
             table_name,
@@ -1625,27 +1708,31 @@ class TableDiscovery:
         AND grantee NOT IN ('SYS', 'SYSTEM', 'PUBLIC')  -- Exclude system grantees
         ORDER BY table_name, grantee, privilege
         """
-        
+
         cursor.execute(query, schema=self.schema)
-        
+
         grants_info = {}
         for row in cursor.fetchall():
             table_name = row[0]
             if table_name not in grants_info:
                 grants_info[table_name] = []
-            
-            grants_info[table_name].append({
-                'grantee': row[1],
-                'privilege': row[2],
-                'grantable': row[3],
-                'grantor': row[4],
-                'grant_type': 'OBJECT'
-            })
-        
+
+            grants_info[table_name].append(
+                {
+                    "grantee": row[1],
+                    "privilege": row[2],
+                    "grantable": row[3],
+                    "grantor": row[4],
+                    "grant_type": "OBJECT",
+                }
+            )
+
         cursor.close()
         return grants_info
 
-    def save_config(self, config: MigrationConfig, output_file: str = "migration_config.json"):
+    def save_config(
+        self, config: MigrationConfig, output_file: str = "migration_config.json"
+    ):
         """Save configuration to JSON file using automatic serialization"""
         config.save_to_file(output_file)
         print(f"✓ Configuration saved to: {output_file}")

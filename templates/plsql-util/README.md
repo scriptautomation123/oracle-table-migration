@@ -7,13 +7,16 @@ This directory contains the **consolidated PL/SQL utility suite** for Oracle tab
 ## Files
 
 ### Core Utility
+
 - **plsql-util.sql** - Main consolidated utility with category-based operations
 
 ### Execution Layer
+
 - **unified_runner.sh** - Low-level SQL script execution wrapper
 - **unified_wrapper.sh** - High-level user-friendly interface
 
 ### Emergency Procedures
+
 - **rollback/** - Emergency rollback procedures (if needed)
 
 ## Architecture
@@ -54,6 +57,7 @@ This directory contains the **consolidated PL/SQL utility suite** for Oracle tab
 ```
 
 **Examples:**
+
 ```sql
 -- Check if table exists
 @plsql-util.sql READONLY check_existence OWNER TABLE_NAME
@@ -71,12 +75,14 @@ This directory contains the **consolidated PL/SQL utility suite** for Oracle tab
 ### Shell Wrapper Usage
 
 **Validate:**
+
 ```bash
 ./unified_wrapper.sh validate check_existence APP_OWNER MY_TABLE -c "$ORACLE_CONN"
 ./unified_wrapper.sh validate count_rows APP_OWNER MY_TABLE 1000000 -c "$ORACLE_CONN"
 ```
 
 **Migrate:**
+
 ```bash
 ./unified_wrapper.sh migrate generate APP_OWNER MY_TABLE -c "$ORACLE_CONN"
 ./unified_wrapper.sh migrate execute APP_OWNER MY_TABLE -c "$ORACLE_CONN"
@@ -85,6 +91,7 @@ This directory contains the **consolidated PL/SQL utility suite** for Oracle tab
 ## Categories
 
 ### READONLY
+
 - `check_sessions` - Check for active sessions
 - `check_existence` - Verify table exists
 - `check_table_structure` - Validate table structure
@@ -93,16 +100,19 @@ This directory contains the **consolidated PL/SQL utility suite** for Oracle tab
 - `check_partition_dist` - Show partition distribution
 
 ### WRITE
+
 - `enable_constraints` - Enable all constraints
 - `disable_constraints` - Disable all constraints
 
 ### WORKFLOW
+
 - `pre_swap` - Pre-swap validation
 - `post_swap` - Post-swap validation
 - `post_data_load` - Post-load validation and stats
 - `post_create` - Post-create validation and stats
 
 ### CLEANUP
+
 - `drop` - Drop table with purge
 - `rename` - Rename table
 
@@ -111,12 +121,13 @@ This directory contains the **consolidated PL/SQL utility suite** for Oracle tab
 ✅ **Consolidated** - All validation operations in one file
 ✅ **Category-based** - Clear separation (READONLY, WRITE, WORKFLOW, CLEANUP)
 ✅ **Consistent** - Uniform error handling across all operations
-✅ **ALL_* views** - All queries use ALL_* views with owner filters
+✅ **ALL\_\* views** - All queries use ALL\_\* views with owner filters
 ✅ **Production-ready** - No TODOs, comprehensive error handling
 
 ## Migration from Old Scripts
 
 All old validation scripts have been archived:
+
 - `01_validator_readonly.sql` → `plsql-util.sql` READONLY category
 - `01_validator_write.sql` → `plsql-util.sql` WRITE category
 - `02_workflow_validator.sql` → `plsql-util.sql` WORKFLOW category

@@ -9,13 +9,13 @@ paths, and test modes.
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
 
 @dataclass
 class TestConfig:
     """Configuration for E2E test execution"""
-    
+
     connection_string: str
     schema: str
     mode: str = "dev"  # dev, test, prod
@@ -26,22 +26,24 @@ class TestConfig:
     skip_schema_setup: bool = False
     tables: Optional[List[str]] = None
     verbose: bool = False
-    
+
     @classmethod
     def from_args(cls, args) -> "TestConfig":
         """Create configuration from CLI arguments"""
         mode = getattr(args, "mode", "dev")
         return cls(
-            connection_string=getattr(args, "connection", None) or cls.get_connection_from_env(),
+            connection_string=getattr(args, "connection", None)
+            or cls.get_connection_from_env(),
             schema=getattr(args, "schema", None) or cls.get_schema_from_env(),
             mode=mode,
-            cleanup_on_success=mode == "test" and not getattr(args, "no_cleanup", False),
+            cleanup_on_success=mode == "test"
+            and not getattr(args, "no_cleanup", False),
             cleanup_on_failure=getattr(args, "cleanup_on_failure", False),
             skip_schema_setup=getattr(args, "skip_schema_setup", False),
             tables=_parse_tables(getattr(args, "tables", None)),
             verbose=getattr(args, "verbose", False),
         )
-    
+
     @classmethod
     def from_env(cls) -> "TestConfig":
         """Create configuration from environment variables"""
@@ -52,7 +54,7 @@ class TestConfig:
             mode=mode,
             cleanup_on_success=mode == "test",
         )
-    
+
     @staticmethod
     def get_connection_from_env() -> str:
         """Get connection string from environment"""
@@ -63,7 +65,7 @@ class TestConfig:
                 "Use --connection or set ORACLE_CONN environment variable"
             )
         return conn
-    
+
     @staticmethod
     def get_schema_from_env() -> str:
         """Get schema name from environment"""
@@ -74,25 +76,28 @@ class TestConfig:
                 "Use --schema or set ORACLE_SCHEMA environment variable"
             )
         return schema
-    
+
     def validate(self):
         """Validate configuration"""
         errors = []
-        
+
         if not self.connection_string:
             errors.append("Connection string is required")
-        
+
         if not self.schema:
             errors.append("Schema name is required")
-        
+
         if self.mode not in ("dev", "test", "prod"):
             errors.append(f"Invalid mode: {self.mode}. Must be dev, test, or prod")
-        
+
         if not self.test_ddl.exists():
             errors.append(f"Test DDL file not found: {self.test_ddl}")
-        
+
         if errors:
-            raise ValueError("Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
+            raise ValueError(
+                "Configuration validation failed:\n"
+                + "\n".join(f"  - {e}" for e in errors)
+            )
 
 
 def _parse_tables(tables_arg: Optional[str]) -> Optional[List[str]]:

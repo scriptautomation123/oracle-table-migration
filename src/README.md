@@ -3,6 +3,7 @@
 ## Overview
 
 The unified runner (`src/runner.py`) provides a single tool for:
+
 - **Development**: Full end-to-end testing of migration workflows
 - **Testing**: Automated validation and verification
 - **Production**: Deployment and execution of table migrations
@@ -58,6 +59,7 @@ python3 src/runner.py test --connection "$ORACLE_CONN" --schema "$SCHEMA"
 ```
 
 **Available modes:**
+
 - `dev` - Development mode (default)
 - `test` - CI/CD test mode (auto-cleanup)
 - `prod` - Production mode (no cleanup)
@@ -92,6 +94,7 @@ python3 src/runner.py validate check_existence \
 ```
 
 **Available operations:**
+
 - `check_existence` - Verify table exists
 - `count_rows` - Count table rows (optional expected value)
 - `check_constraints` - Validate table constraints
@@ -288,6 +291,7 @@ python3 src/runner.py discover \
 ### Permission Errors
 
 Ensure your Oracle user has required privileges:
+
 - `SELECT` on target schemas
 - `CREATE TABLE` for migration
 - `ALTER TABLE` for table swaps
@@ -319,4 +323,3 @@ src/lib/
 - [Pl/SQL Utility Suite](../../templates/plsql-util/README.md) - Database validation utilities
 - [Migration Schema](../../lib/enhanced_migration_schema.json) - Configuration schema
 - [Template Documentation](../templates/) - DDL generation templates
-

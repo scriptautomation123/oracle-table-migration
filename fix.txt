@@ -1,0 +1,40 @@
+src/lib/test_orchestrator.py:258:40
+ 258:40  high  Expected ',', found name                 ruff/invalid-syntax
+ 258:41  high  missing closing quote in string literal  ruff/invalid-syntax
+ 258:43  high  Expected ')', found newline              ruff/invalid-syntax
+ 324:40  high  Expected ',', found name                 ruff/invalid-syntax
+ 324:41  high  missing closing quote in string literal  ruff/invalid-syntax
+ 324:43  high  Expected ')', found newline              ruff/invalid-syntax
+
+templates/README.md:24:1
+  24:1  high   trailing whitespace.                                git-diff-check/error
+templates/plsql-util/unified_runner.sh:132:82
+ 132:82  high    parameter expansion requires a literal                                                                 shfmt/parse         
+ 163:1   high     trailing whitespace.                                                                                  git-diff-check/error
+ 199:17  low     The mentioned syntax error was in this double quoted string.                                           shellcheck/SC1009   
+ 199:53  high    Couldn't parse this ksh-style ${ ..; } command expansion. Fix to allow more checks.                    shellcheck/SC1073   
+ 199:64  medium  This } is literal. Check expression (missing ;/\n?) or quote it.                                       shellcheck/SC1083   
+ 199:67  high    Expected } to end the ksh-style ${ ..; } command expansion. Fix any mentioned problems and try again.  shellcheck/SC1072   
+
+templates/plsql-util/unified_wrapper.sh:18:1
+  18:1  medium  BLUE appears unused. Verify use (or export if used externally).     shellcheck/SC2034
+  78:1  medium  VERBOSE appears unused. Verify use (or export if used externally).  shellcheck/SC2034
+ 115:8  medium  In POSIX sh, echo flags are undefined.                              shellcheck/SC3037
+ 124:2  medium  TYPE appears unused. Verify use (or export if used externally).     shellcheck/SC2034
+ 144:8  medium  In POSIX sh, echo flags are undefined.                              shellcheck/SC3037
+ 153:7  medium  In POSIX sh, echo flags are undefined.                              shellcheck/SC3037
+
+templates/plsql-util/unified_runner.sh:132:82
+ 132:82  high    parameter expansion requires a literal                                                                 shfmt/parse         
+ 163:1   high     trailing whitespace.                                                                                  git-diff-check/error
+ 199:17  low     The mentioned syntax error was in this double quoted string.                                           shellcheck/SC1009   
+ 199:53  high    Couldn't parse this ksh-style ${ ..; } command expansion. Fix to allow more checks.                    shellcheck/SC1073   
+ 199:64  medium  This } is literal. Check expression (missing ;/\n?) or quote it.                                       shellcheck/SC1083   
+ 199:67  high    Expected } to end the ksh-style ${ ..; } command expansion. Fix any mentioned problems and try again.  shellcheck/SC1072   
+
+templates/plsql-util/unified_wrapper.sh:18:1
+  18:1  medium  BLUE appears unused. Verify use (or export if used externally).     shellcheck/SC2034
+  78:1  medium  VERBOSE appears unused. Verify use (or export if used externally).  shellcheck/SC2034
+ 115:8  medium  In POSIX sh, echo flags are undefined.                              shellcheck/SC3037
+ 124:2  medium  TYPE appears unused. Verify use (or export if used externally).     shellcheck/SC2034
+ 144:8  medium  In POSIX sh, echo flags are undefined.                              shellcheck/SC3037

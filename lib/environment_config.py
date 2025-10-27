@@ -13,10 +13,10 @@ from typing import Any, Dict, List, Optional
 
 # Import dataclasses from generated models (single source of truth)
 from lib.migration_models import (
-    TablespaceConfig,
-    SubpartitionDefaults,
+    EnvironmentConfig,
     ParallelDefaults,
-    EnvironmentConfig
+    SubpartitionDefaults,
+    TablespaceConfig,
 )
 
 

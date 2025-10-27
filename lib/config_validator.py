@@ -8,8 +8,9 @@ Validates migration configuration files against schema and best practices.
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
-from jsonschema import validate, ValidationError, Draft7Validator
+from typing import Dict, List, Tuple
+
+from jsonschema import ValidationError, validate
 
 try:
     from .migration_models import MigrationConfig, TableConfig
@@ -157,7 +158,7 @@ class ConfigValidator:
                 owner=table_dict.get("owner", ""),
                 table_name=table_dict.get("table_name", f"table[{index}]"),
                 current_state=None,  # We'll access the dict directly for now
-                common_settings=None  # We'll access the dict directly for now
+                common_settings=None,  # We'll access the dict directly for now
             )
         except Exception as e:
             self.errors.append(f"Table[{index}]: Failed to parse table structure: {e}")

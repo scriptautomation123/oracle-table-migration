@@ -225,7 +225,13 @@
     "TableConfig": {
       "type": "object",
       "description": "Complete table configuration for migration",
-      "required": ["enabled", "owner", "table_name", "current_state", "common_settings"],
+      "required": [
+        "enabled",
+        "owner",
+        "table_name",
+        "current_state",
+        "common_settings"
+      ],
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -254,9 +260,17 @@
       "type": "object",
       "description": "Complete current table state with all Oracle metadata",
       "required": [
-        "is_partitioned", "partition_type", "size_gb", "row_count", 
-        "lob_count", "index_count", "columns", "lob_storage", 
-        "storage_parameters", "indexes", "available_columns"
+        "is_partitioned",
+        "partition_type",
+        "size_gb",
+        "row_count",
+        "lob_count",
+        "index_count",
+        "columns",
+        "lob_storage",
+        "storage_parameters",
+        "indexes",
+        "available_columns"
       ],
       "properties": {
         "is_partitioned": {
@@ -558,7 +572,12 @@
         },
         "index_type": {
           "type": "string",
-          "enum": ["NORMAL", "BITMAP", "FUNCTION-BASED NORMAL", "FUNCTION-BASED BITMAP"],
+          "enum": [
+            "NORMAL",
+            "BITMAP",
+            "FUNCTION-BASED NORMAL",
+            "FUNCTION-BASED BITMAP"
+          ],
           "description": "Oracle index type"
         },
         "uniqueness": {
@@ -648,7 +667,13 @@
     "CommonSettings": {
       "type": "object",
       "description": "Common configurable settings for table migration",
-      "required": ["new_table_name", "old_table_name", "migration_action", "target_configuration", "migration_settings"],
+      "required": [
+        "new_table_name",
+        "old_table_name",
+        "migration_action",
+        "target_configuration",
+        "migration_settings"
+      ],
       "properties": {
         "new_table_name": {
           "type": "string",
@@ -759,7 +784,15 @@
 
     "PartitionTypeEnum": {
       "type": "string",
-      "enum": ["NONE", "RANGE", "LIST", "HASH", "REFERENCE", "SYSTEM", "INTERVAL"],
+      "enum": [
+        "NONE",
+        "RANGE",
+        "LIST",
+        "HASH",
+        "REFERENCE",
+        "SYSTEM",
+        "INTERVAL"
+      ],
       "description": "Oracle partition types"
     },
 
@@ -779,7 +812,7 @@
       "type": "string",
       "enum": [
         "convert_interval_to_interval_hash",
-        "add_interval_hash_partitioning", 
+        "add_interval_hash_partitioning",
         "add_interval_partitioning",
         "add_hash_subpartitions",
         "convert_to_interval_hash",
