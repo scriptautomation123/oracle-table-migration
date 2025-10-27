@@ -532,6 +532,117 @@ class TableDiscovery:
         cursor.close()
         return identity_columns
 
+    def _get_column_statistics(self, table_name: str) -> Dict[str, Dict]:
+        """Get column cardinality and statistics for subpartition recommendations"""
+        cursor = self.connection.cursor()
+        stats = {}
+        
+        try:
+            # Get column statistics from ALL_TAB_COL_STATISTICS with proper schema handling
+            query = """
+                SELECT 
+                    c.column_name,
+                    COALESCE(c.num_distinct, 0) as num_distinct,
+                    COALESCE(c.num_nulls, 0) as num_nulls,
+                    COALESCE(c.density, 0) as density,
+                    CASE 
+                        WHEN COALESCE(c.num_distinct, 0) = 0 THEN 0
+                        ELSE ROUND((COALESCE(c.num_distinct, 0) / NULLIF(COALESCE(t.num_rows, 0), 0)) * 100, 2)
+                    END as uniqueness_pct,
+                    COALESCE(t.num_rows, 0) as num_rows
+                FROM all_tab_col_statistics c
+                JOIN all_tables t ON c.table_name = t.table_name 
+                    AND c.owner = t.owner
+                    AND t.owner = :schema
+                WHERE c.owner = :schema 
+                    AND c.table_name = :table_name
+                ORDER BY c.num_distinct DESC NULLS LAST
+            """
+            cursor.execute(query, schema=self.schema, table_name=table_name.upper())
+            
+            for row in cursor.fetchall():
+                col_name, num_distinct, num_nulls, density, uniqueness_pct, num_rows = row
+                stats[col_name] = {
+                    "num_distinct": num_distinct,
+                    "num_nulls": num_nulls,
+                    "density": density,
+                    "uniqueness_pct": uniqueness_pct,
+                    "num_rows": num_rows
+                }
+                
+        except Exception as e:
+            print(f"Warning: Could not gather column statistics for {table_name}: {e}")
+            # Fallback: estimate uniqueness from data types
+            columns_query = """
+                SELECT column_name, data_type, nullable
+                FROM all_tab_columns 
+                WHERE owner = :schema AND table_name = :table_name
+            """
+            cursor.execute(columns_query, schema=self.schema, table_name=table_name)
+            
+            for row in cursor.fetchall():
+                col_name, data_type, nullable = row
+                # Estimate uniqueness based on data type
+                if data_type in ['NUMBER'] and 'ID' in col_name.upper():
+                    stats[col_name] = {"estimated_uniqueness": "HIGH", "reason": "ID column"}
+                elif data_type in ['VARCHAR2', 'CHAR'] and nullable == 'N':
+                    stats[col_name] = {"estimated_uniqueness": "MEDIUM", "reason": "Non-null string"}
+                else:
+                    stats[col_name] = {"estimated_uniqueness": "LOW", "reason": "Nullable or low-cardinality type"}
+        
+        cursor.close()
+        return stats
+
+    def _recommend_subpartition_column(self, table_name: str, available_columns: Dict) -> str:
+        """Recommend best subpartition column based on cardinality and data type"""
+        stats = self._get_column_statistics(table_name)
+        
+        # Check if we have real statistics (not just estimated)
+        has_real_stats = any("num_distinct" in stats.get(col_name, {}) for col_name in stats.keys())
+        
+        if not has_real_stats:
+            # No statistics available - return None to let user specify manually
+            return None
+        
+        # Get all available columns (excluding timestamp columns used for partitioning)
+        timestamp_cols = [c["name"] for c in available_columns["timestamp_columns"]]
+        numeric_cols = [c["name"] for c in available_columns["numeric_columns"]]
+        string_cols = [c["name"] for c in available_columns["string_columns"]]
+        
+        # Prefer numeric columns for hash subpartitioning (better distribution)
+        candidates = []
+        
+        for col_name in numeric_cols + string_cols:
+            if col_name in timestamp_cols:
+                continue  # Skip timestamp columns (used for interval partitioning)
+                
+            col_stats = stats.get(col_name, {})
+            
+            if "num_distinct" in col_stats:
+                # Real statistics available
+                uniqueness_pct = col_stats.get("uniqueness_pct", 0)
+                num_distinct = col_stats.get("num_distinct", 0)
+                
+                if num_distinct > 100:  # Good cardinality for subpartitioning
+                    candidates.append({
+                        "column": col_name,
+                        "score": uniqueness_pct,
+                        "num_distinct": num_distinct,
+                        "reason": f"{uniqueness_pct}% unique ({num_distinct} distinct values)"
+                    })
+        
+        if not candidates:
+            # No good candidates - return None
+            return None
+        
+        # Sort by score (uniqueness percentage) descending
+        candidates.sort(key=lambda x: x["score"], reverse=True)
+        
+        recommended = candidates[0]
+        print(f"  Recommended subpartition column: {recommended['column']} ({recommended['reason']})")
+        
+        return recommended["column"]
+
     def _get_all_columns_metadata(self, table_name: str) -> List[Dict]:
         """Get complete column metadata for CREATE TABLE statement (Oracle 19c+)"""
         cursor = self.connection.cursor()
@@ -934,18 +1045,27 @@ class TableDiscovery:
             self.environment, size_gb
         )
 
-        # Build target configuration
-        target_partition_column = None
-        if partition_key_columns:
-            target_partition_column = partition_key_columns[0]  # Use existing
-        elif timestamp_columns:
-            target_partition_column = timestamp_columns[0]["name"]
+        # Get column statistics and recommend subpartition column
+        available_columns = {
+            "timestamp_columns": timestamp_columns,
+            "numeric_columns": numeric_columns,
+            "string_columns": string_columns
+        }
+        recommended_subpartition = self._recommend_subpartition_column(table_name, available_columns)
 
-        target_hash_column = None
-        if numeric_columns:
-            target_hash_column = numeric_columns[0]["name"]
-        elif string_columns:
-            target_hash_column = string_columns[0]["name"]
+        # Build target configuration
+        # For INTERVAL partitioning, prefer timestamp columns over existing partition keys
+        target_partition_column = None
+        if timestamp_columns:
+            target_partition_column = timestamp_columns[0]["name"]  # Prefer timestamp for INTERVAL
+        elif partition_key_columns:
+            target_partition_column = partition_key_columns[0]  # Fallback to existing
+
+        target_hash_column = recommended_subpartition or (
+            numeric_columns[0]["name"] if numeric_columns 
+            else string_columns[0]["name"] if string_columns 
+            else None
+        )
 
         # Get environment-specific tablespaces
         env_tablespaces = self.env_manager.get_tablespaces(self.environment)
@@ -1309,7 +1429,8 @@ class TableDiscovery:
                 partitioned=idx["partitioned"],
                 columns=idx["columns"],
                 is_reverse=idx.get("is_reverse", False),
-                locality=idx.get("locality"),
+                # Force LOCAL for all indexes - required for interval-hash partitioning
+                locality=idx.get("locality") if idx.get("locality") else "LOCAL",
             )
             for idx in raw_indexes
         ]
@@ -1749,20 +1870,38 @@ class TableDiscovery:
         return grants_info
 
     def save_config(
-        self, config: MigrationConfig, output_file: str = "migration_config.json"
+        self, config: MigrationConfig, output_file: str = "migration_config.json", base_output_dir: str = None
     ):
         """Save configuration to JSON file using automatic serialization"""
         import json
         from pathlib import Path
 
-        # Ensure directory exists
-        output_path = Path(output_file)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Create timestamped output directory if specified
+        if base_output_dir:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            schema = self.schema.lower()
+            output_dir = Path(base_output_dir) / f"{timestamp}_{schema}"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Save config in the timestamped directory
+            config_file = output_dir / "migration_config.json"
+            with open(config_file, 'w') as f:
+                json.dump(config.to_dict(), f, indent=2)
+            
+            print(f"✓ Configuration saved to: {config_file}")
+            print(f"✓ All DDL will be generated in: {output_dir}")
+            print(f"  To generate scripts: python3 src/generate.py -c {config_file}")
+            return str(config_file)
+        else:
+            # Legacy behavior - save to specified file
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Convert to dict and save
-        with open(output_file, 'w') as f:
-            json.dump(config.to_dict(), f, indent=2)
+            # Convert to dict and save
+            with open(output_file, 'w') as f:
+                json.dump(config.to_dict(), f, indent=2)
 
-        print(f"✓ Configuration saved to: {output_file}")
-        print("  Edit this file to customize migration settings")
-        print(f"  Then run: python3 generate_scripts.py --config {output_file}")
+            print(f"✓ Configuration saved to: {output_file}")
+            print("  Edit this file to customize migration settings")
+            print(f"  Then run: python3 generate_scripts.py --config {output_file}")
+            return output_file
