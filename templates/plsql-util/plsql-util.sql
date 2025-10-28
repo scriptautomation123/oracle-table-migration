@@ -812,15 +812,22 @@ BEGIN
                                     -- high_value contains something like "TO_DATE(' 2025-03-01 00:00:00', 'SYYYY-MM-DD HH24:MI:SS')"
                                     -- SECURITY: high_value comes from Oracle metadata, but we validate it's a safe expression
                                     -- Only execute if it matches expected date expression patterns
-                                    IF REGEXP_LIKE(v_max_high_value, '^(TO_DATE|TIMESTAMP)\s*\(', 'i') AND 
-                                       NOT REGEXP_LIKE(v_max_high_value, '(;|--|/\*|\*/|EXECUTE|DBMS_|UTL_)', 'i') THEN
-                                        v_sql := 'SELECT ' || v_max_high_value || ' FROM DUAL';
-                                        EXECUTE IMMEDIATE v_sql INTO v_max_partition_date;
-                                    ELSE
-                                        -- Unexpected format or suspicious content, use current date
-                                        DBMS_OUTPUT.PUT_LINE('  WARNING: Unexpected or unsafe high_value format: ' || SUBSTR(v_max_high_value, 1, 100));
-                                        v_max_partition_date := TRUNC(SYSDATE);
-                                    END IF;
+                                    -- Check for suspicious SQL keywords (case-insensitive)
+                                    DECLARE
+                                        v_upper_value VARCHAR2(32767) := UPPER(v_max_high_value);
+                                    BEGIN
+                                        IF REGEXP_LIKE(v_upper_value, '^(TO_DATE|TIMESTAMP)\s*\(') AND 
+                                           NOT REGEXP_LIKE(v_upper_value, 
+                                               '(;|--|/\*|\*/|EXECUTE|DBMS_|UTL_|SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|GRANT|REVOKE)', 
+                                               'i') THEN
+                                            v_sql := 'SELECT ' || v_max_high_value || ' FROM DUAL';
+                                            EXECUTE IMMEDIATE v_sql INTO v_max_partition_date;
+                                        ELSE
+                                            -- Unexpected format or suspicious content, use current date
+                                            DBMS_OUTPUT.PUT_LINE('  WARNING: Unsafe high_value format blocked: ' || SUBSTR(v_max_high_value, 1, 100));
+                                            v_max_partition_date := TRUNC(SYSDATE);
+                                        END IF;
+                                    END;
                                     
                                     DBMS_OUTPUT.PUT_LINE('  Max partition date: ' || TO_CHAR(v_max_partition_date, 'YYYY-MM-DD'));
                                 END;
