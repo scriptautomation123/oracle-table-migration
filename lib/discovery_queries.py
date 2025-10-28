@@ -1289,51 +1289,6 @@ class TableDiscovery:
         except Exception:
             return "Unknown"
 
-    def _extract_connection_details(self) -> Dict[str, str]:
-        """Extract connection details for metadata tracking"""
-        if not self.connection_string:
-            return {
-                "type": "Unknown",
-                "host": "Unknown",
-                "port": "Unknown",
-                "service": "Unknown",
-            }
-
-        try:
-            # Parse connection string: user/pass@host:port/service
-            if "@" in self.connection_string:
-                user_part, conn_part = self.connection_string.split("@", 1)
-                user = user_part.split("/")[0] if "/" in user_part else user_part
-
-                if "/" in conn_part:
-                    # Service name format
-                    host_port, service = conn_part.rsplit("/", 1)
-                    if ":" in host_port:
-                        host, port = host_port.rsplit(":", 1)
-                    else:
-                        host, port = host_port, "1521"
-
-                    return {
-                        "type": "Service Name",
-                        "host": host,
-                        "port": port,
-                        "service": service,
-                        "user": user,
-                    }
-                elif ":" in conn_part and conn_part.count(":") == 2:
-                    # SID format: host:port:sid
-                    parts = conn_part.split(":")
-                    return {
-                        "type": "SID",
-                        "host": parts[0],
-                        "port": parts[1],
-                        "service": parts[2],
-                        "user": user,
-                    }
-
-            return {"type": "Unknown", "connection_string": self.connection_string}
-        except Exception as e:
-            return {"type": "Error", "error": str(e)}
 
     def _format_criteria(
         self,
