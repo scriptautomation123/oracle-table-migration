@@ -21,6 +21,7 @@ Changed BUFFER POOL DEFAU to BUFFER POOL DEFAULT
 Alternative: Using Tablespace Groups
 If you want to use multiple tablespaces for LOBs, you need to create a tablespace group first:
 
+```sql
 CREATE TABLE GD.IE_PC_OFFER_IN_NEW1
 (
     TRACE_ID             VARCHAR2(36 BYTE) NOT NULL,
@@ -73,11 +74,12 @@ SUBPARTITIONS 24
     )
 )
 NOCACHE;
+```
 
 alternative; 
 -- First, create a tablespace group (if it doesn't exist)
 
-
+```sql
 ALTER TABLESPACE IE_LOB_01 TABLESPACE GROUP LOB_GROUP;
 ALTER TABLESPACE IE_LOB_02 TABLESPACE GROUP LOB_GROUP;
 ALTER TABLESPACE IE_LOB_03 TABLESPACE GROUP LOB_GROUP;
@@ -135,7 +137,7 @@ SUBPARTITIONS 24
     )
 )
 NOCACHE;
-
+```
 
 Summary
 The ORA-02538: invalid TABLESPACE SET clause error occurs because:
