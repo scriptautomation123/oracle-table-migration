@@ -717,6 +717,9 @@ BEGIN
                     
                 WHEN 'PRE_CREATE_PARTITIONS' THEN
                     -- Pre-create future interval partitions
+                    -- NOTE: Oracle interval partitioned tables automatically create partitions on INSERT
+                    -- This operation verifies that the partition infrastructure can handle future dates
+                    -- but doesn't actually create physical partitions (they're created on first insert)
                     DECLARE
                         v_schema VARCHAR2(128) := UPPER('&arg3');
                         v_table VARCHAR2(128) := UPPER('&arg4');
@@ -808,13 +811,14 @@ BEGIN
                                     -- Execute the expression to get actual date value
                                     -- high_value contains something like "TO_DATE(' 2025-03-01 00:00:00', 'SYYYY-MM-DD HH24:MI:SS')"
                                     -- SECURITY: high_value comes from Oracle metadata, but we validate it's a safe expression
-                                    -- Only execute if it looks like a date expression
-                                    IF v_max_high_value LIKE 'TO_DATE%' OR v_max_high_value LIKE 'TIMESTAMP%' THEN
+                                    -- Only execute if it matches expected date expression patterns
+                                    IF REGEXP_LIKE(v_max_high_value, '^(TO_DATE|TIMESTAMP)\s*\(', 'i') AND 
+                                       NOT REGEXP_LIKE(v_max_high_value, '(;|--|/\*|\*/|EXECUTE|DBMS_|UTL_)', 'i') THEN
                                         v_sql := 'SELECT ' || v_max_high_value || ' FROM DUAL';
                                         EXECUTE IMMEDIATE v_sql INTO v_max_partition_date;
                                     ELSE
-                                        -- Unexpected format, use current date
-                                        DBMS_OUTPUT.PUT_LINE('  WARNING: Unexpected high_value format: ' || SUBSTR(v_max_high_value, 1, 100));
+                                        -- Unexpected format or suspicious content, use current date
+                                        DBMS_OUTPUT.PUT_LINE('  WARNING: Unexpected or unsafe high_value format: ' || SUBSTR(v_max_high_value, 1, 100));
                                         v_max_partition_date := TRUNC(SYSDATE);
                                     END IF;
                                     
@@ -864,14 +868,22 @@ BEGIN
                                           AND partition_name = v_partition_name;
                                         
                                         IF v_part_exists = 0 THEN
-                                            -- For interval partitioned tables, partitions are auto-created on insert
-                                            -- Manual partition creation forces Oracle to create the partition now
-                                            -- This is useful for pre-allocating partitions before data load
+                                            -- For interval partitioned tables, partitions are auto-created on INSERT
+                                            -- We can't use ALTER TABLE to pre-create them directly
+                                            -- Instead, we just verify the partition will be available when needed
+                                            -- by checking if Oracle recognizes the date range
+                                            --
+                                            -- Oracle automatically creates interval partitions when:
+                                            -- 1. Data is inserted for a date that falls in the interval
+                                            -- 2. A query references a partition FOR a specific date
+                                            --
+                                            -- This query checks if the partition infrastructure is ready
+                                            -- without actually inserting data
                                             DECLARE
                                                 v_dummy NUMBER;
                                             BEGIN
-                                                -- Insert dummy row to force partition creation, then delete it
-                                                -- This is safer than ALTER TABLE as it uses Oracle's built-in mechanism
+                                                -- Query the partition metadata to verify Oracle can handle this date
+                                                -- The PARTITION FOR clause forces Oracle to consider creating the partition
                                                 EXECUTE IMMEDIATE 'SELECT 1 FROM DUAL WHERE EXISTS (
                                                     SELECT 1 FROM ' || 
                                                     DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
@@ -879,9 +891,10 @@ BEGIN
                                                     ' PARTITION FOR (TO_DATE(''' || 
                                                     TO_CHAR(v_next_partition_date, 'YYYY-MM-DD') || 
                                                     ''', ''YYYY-MM-DD'')) WHERE 1=0)' INTO v_dummy;
-                                                DBMS_OUTPUT.PUT_LINE('  ✓ Pre-created partition: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
+                                                DBMS_OUTPUT.PUT_LINE('  ✓ Partition infrastructure ready: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
                                             EXCEPTION WHEN NO_DATA_FOUND THEN
-                                                -- Partition doesn't exist yet, log it
+                                                -- Query returned no rows, which is expected (WHERE 1=0)
+                                                -- This means the partition range is recognized by Oracle
                                                 DBMS_OUTPUT.PUT_LINE('  ℹ Partition will be auto-created on data insert: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
                                             END;
                                         ELSE
