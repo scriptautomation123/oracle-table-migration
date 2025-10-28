@@ -1,5 +1,7 @@
 # Critical Operations - Quick Reference
 
+**🔒 SECURITY: All operations use DBMS_ASSERT for SQL injection protection**
+
 ## Setup (Do Once)
 ```bash
 source venv/bin/activate
@@ -46,9 +48,17 @@ python3 src/generate.py -c output/20251027_HHMMSS_gd/migration_config.json
 cd templates/plsql-util
 chmod +x unified_runner.sh
 
+# Check for active sessions
+./unified_runner.sh validation "nbk5k9e/***@EOMIEP01_SVC01" \
+  check_sessions MY_TABLE
+
 # Check table exists
 ./unified_runner.sh validation "nbk5k9e/***@EOMIEP01_SVC01" \
   check_existence GD MY_TABLE
+
+# Check table structure and partitioning
+./unified_runner.sh validation "nbk5k9e/***@EOMIEP01_SVC01" \
+  check_table_structure GD MY_TABLE
 
 # Count rows
 ./unified_runner.sh validation "nbk5k9e/***@EOMIEP01_SVC01" \
@@ -57,6 +67,16 @@ chmod +x unified_runner.sh
 # Check constraints
 ./unified_runner.sh validation "nbk5k9e/***@EOMIEP01_SVC01" \
   check_constraints GD MY_TABLE
+
+# Check partition distribution
+./unified_runner.sh validation "nbk5k9e/***@EOMIEP01_SVC01" \
+  check_partition_dist GD MY_TABLE
+
+# System operations (SYSDBA - automatically uses '/ as sysdba')
+./unified_runner.sh validation "" check_privileges
+./unified_runner.sh validation "" check_tablespace USERS
+./unified_runner.sh validation "" check_sessions_all APP_USER
+./unified_runner.sh validation "" check_invalid_objects APP_OWNER
 ```
 
 ---
@@ -122,13 +142,16 @@ sqlplus "nbk5k9e/***@EOMIEP01_SVC01" @output/20251027_HHMMSS_gd/GD_MY_TABLE/20_d
 
 ---
 
-## 10. CREATE INSTEAD OF VIEW (Zero-Downtime Read/Write)
+## 10. CREATE INSTEAD OF VIEW (Zero-Downtime Read/Write) - SECURE
 ```bash
 ./unified_runner.sh workflow "nbk5k9e/***@EOMIEP01_SVC01" \
   create_renamed_view GD MY_TABLE
 
 # Creates MY_TABLE_JOINED view showing both old + new tables
-# Creates INSTEAD OF trigger for INSERT to new table
+# Creates secure INSTEAD OF trigger for INSERT to new table
+# 🔒 Uses DBMS_ASSERT for SQL injection protection
+# 🔒 Automatically detects primary key for proper deduplication
+# 🔒 Creates restriction triggers for UPDATE/DELETE operations
 ```
 
 ---
@@ -188,10 +211,10 @@ sqlplus "nbk5k9e/***@EOMIEP01_SVC01" @output/20251027_HHMMSS_gd/GD_MY_TABLE/20_d
 
 ## CONSTRAINTS MANAGEMENT
 ```bash
-# Disable constraints before large operations
+# Disable constraints before large operations (with proper error handling)
 ./unified_runner.sh validation "$CONN" disable_constraints GD MY_TABLE
 
-# Enable constraints after operations
+# Enable constraints after operations (with proper error handling)
 ./unified_runner.sh validation "$CONN" enable_constraints GD MY_TABLE
 ```
 
@@ -263,4 +286,31 @@ All operations create timestamped logs:
 Each contains:
 - `runner.log` - Full execution log
 - `validation_output.log` or `workflow.log` - SQL output
+
+---
+
+## 🔒 Security Features
+
+**SQL Injection Protection:**
+- All dynamic SQL uses `DBMS_ASSERT.SIMPLE_SQL_NAME()` for identifier validation
+- All dynamic SQL uses `DBMS_ASSERT.ENQUOTE_NAME()` for proper quoting
+- Input validation prevents malicious SQL injection attempts
+
+**Error Handling:**
+- Comprehensive error codes (-20001 to -20101)
+- Specific error messages for troubleshooting
+- No silent failures - all errors are reported
+- Proper exception handling with context
+
+**INSTEAD OF Trigger Security:**
+- Automatically detects primary key columns
+- Creates proper deduplication logic
+- Restricts UPDATE/DELETE operations with clear error messages
+- Validates all prerequisites before execution
+
+**Operation Categories:**
+- **READONLY**: Safe SELECT-only operations
+- **WRITE**: Schema modifications with validation
+- **WORKFLOW**: Multi-step operations with comprehensive checks
+- **CLEANUP**: Safe cleanup operations with validation
 

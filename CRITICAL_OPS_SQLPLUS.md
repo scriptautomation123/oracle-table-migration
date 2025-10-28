@@ -1,5 +1,7 @@
 # Critical Operations - SQL*Plus Direct Reference
 
+**🔒 SECURITY: All operations use DBMS_ASSERT for SQL injection protection**
+
 ## Setup (Do Once)
 ```bash
 source venv/bin/activate
@@ -43,10 +45,47 @@ python3 src/generate.py -c output/20251027_HHMMSS_gd/migration_config.json
 
 ## 3. VALIDATE TABLES (Before Operations) - SQL*Plus Direct
 
+**Check for active sessions:**
+```bash
+sqlplus -S "nbk5k9e/***@EOMIEP01_SVC01" <<EOF
+@templates/plsql-util/plsql-util.sql READONLY check_sessions MY_TABLE
+EOF
+```
+
+**System-level operations (requires SYSDBA):**
+```bash
+# Check SYSDBA privileges
+sqlplus -S "/ as sysdba" <<EOF
+@templates/plsql-util/plsql-util.sql SYS check_privileges
+EOF
+
+# Check tablespace usage
+sqlplus -S "/ as sysdba" <<EOF
+@templates/plsql-util/plsql-util.sql SYS check_tablespace USERS
+EOF
+
+# Check all active sessions
+sqlplus -S "/ as sysdba" <<EOF
+@templates/plsql-util/plsql-util.sql SYS check_sessions_all APP_USER
+EOF
+
+# Check for invalid objects
+sqlplus -S "/ as sysdba" <<EOF
+@templates/plsql-util/plsql-util.sql SYS check_invalid_objects APP_OWNER
+EOF
+```
+
 **Check table exists:**
 ```bash
 sqlplus -S "nbk5k9e/***@EOMIEP01_SVC01" <<EOF
 @templates/plsql-util/plsql-util.sql READONLY check_existence GD MY_TABLE
+EOF
+```
+
+**Check table structure and partitioning:**
+```bash
+sqlplus -S "nbk5k9e/***@EOMIEP01_SVC01" <<EOF
+@templates/plsql-util/plsql-util.sql READONLY check_table_structure GD MY_TABLE
 EOF
 ```
 
@@ -132,12 +171,19 @@ sqlplus "nbk5k9e/***@EOMIEP01_SVC01" @output/20251027_HHMMSS_gd/GD_MY_TABLE/35_g
 
 ---
 
-## 10. CREATE INSTEAD OF VIEW (Zero-Downtime Read/Write)
+## 10. CREATE INSTEAD OF VIEW (Zero-Downtime Read/Write) - SECURE
 ```bash
 sqlplus -S "nbk5k9e/***@EOMIEP01_SVC01" <<EOF
 @templates/plsql-util/plsql-util.sql WORKFLOW create_renamed_view GD MY_TABLE
 EOF
 ```
+
+**🔒 Security Features:**
+- Uses DBMS_ASSERT for SQL injection protection
+- Automatically detects primary key for proper deduplication
+- Creates restriction triggers for UPDATE/DELETE operations
+- Proper error handling with specific error codes
+- Validates all prerequisites before execution
 
 ---
 
@@ -335,6 +381,13 @@ EOF
 - `drop` - Drop table with CASCADE PURGE
 - `rename` - Rename table
 
+### SYS Operations (requires SYSDBA)
+- `check_privileges` - Verify SYSDBA privileges
+- `check_tablespace` - Check tablespace usage and availability
+- `check_sessions_all` - Check all active sessions system-wide
+- `kill_sessions` - Kill sessions matching pattern (use with caution!)
+- `check_invalid_objects` - Check for invalid objects in schema or system-wide
+
 ---
 
 ## Usage Pattern
@@ -360,7 +413,53 @@ EOF
 sqlplus -S "$CONN" <<EOF
 @templates/plsql-util/plsql-util.sql WORKFLOW finalize_swap SCHEMA TABLE
 EOF
+
+# System operations (SYSDBA)
+sqlplus -S "/ as sysdba" <<EOF
+@templates/plsql-util/plsql-util.sql SYS check_privileges
+EOF
+
+sqlplus -S "/ as sysdba" <<EOF
+@templates/plsql-util/plsql-util.sql SYS check_tablespace USERS
+EOF
 ```
+
+---
+
+## TOAD STANDALONE EXECUTION
+
+**For Toad standalone execution:**
+
+1. **Using unified_runner.sh:**
+```bash
+# Create Toad script files
+EXPLICIT_CLIENT=toad ./unified_runner.sh validation "" check_existence SCHEMA TABLE
+EXPLICIT_CLIENT=toad ./unified_runner.sh workflow "" create_renamed_view SCHEMA TABLE
+```
+
+2. **Using unified_wrapper.sh:**
+```bash
+# Create Toad script files
+./unified_wrapper.sh validate check_existence SCHEMA TABLE --toad
+./unified_wrapper.sh workflow create_renamed_view SCHEMA TABLE --toad
+```
+
+3. **Direct Toad execution:**
+```sql
+-- In Toad, set substitution variables manually:
+DEFINE category = 'READONLY'
+DEFINE operation = 'check_existence'
+DEFINE arg3 = 'SCHEMA_NAME'
+DEFINE arg4 = 'TABLE_NAME'
+
+-- Then execute the script
+@templates/plsql-util/plsql-util.sql
+```
+
+**Toad Script Generation:**
+- Scripts are created in `output/validation_run_YYYYMMDD_HHMMSS/toad_script.sql`
+- Open the generated script in Toad and execute it
+- All substitution variables are pre-configured
 
 ---
 

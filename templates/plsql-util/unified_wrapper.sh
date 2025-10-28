@@ -24,6 +24,7 @@ NC='\033[0m'
 print_usage() {
 	cat <<EOF
 ${CYAN}Oracle Migration Unified Wrapper${NC}
+${GREEN}SECURITY: All operations use DBMS_ASSERT for SQL injection protection${NC}
 
 ${GREEN}USAGE:${NC}
     $0 <command> [subcommand] [args...]
@@ -32,18 +33,28 @@ ${GREEN}COMMANDS:${NC}
 
   ${YELLOW}validate <operation> [args]${NC}
     Run validation operations
-    
+
     Operations:
-      • check_existence <owner> <table>
-      • count_rows <owner> <table> [expected]
-      • check_constraints <owner> <table> [action]
-      • check_partitions <owner> <table>
-      • pre_swap <owner> <table> <new> <old>
-      • post_swap <owner> <table> <old>
+      • check_sessions <pattern> - Check for active sessions
+      • check_existence <owner> <table> - Verify table exists
+      • check_table_structure <owner> <table> - Check table structure and partitioning
+      • count_rows <owner> <table> [expected] - Count rows with optional validation
+      • check_constraints <owner> <table> - Check constraint status
+      • check_partition_dist <owner> <table> - Show partition distribution
+      • pre_swap <owner> <table> <new> <old> - Pre-swap validation
+      • post_swap <owner> <table> <old> - Post-swap validation
+
+    System Operations (requires SYSDBA):
+      • check_privileges - Verify SYSDBA privileges
+      • check_tablespace [tablespace] - Check tablespace usage
+      • check_sessions_all [pattern] - Check all active sessions
+      • kill_sessions <pattern> - Kill sessions matching pattern (CAUTION!)
+      • check_invalid_objects [schema] - Check for invalid objects
+      Note: These operations automatically use '/ as sysdba' connection
 
   ${YELLOW}migrate <mode> <owner> <table>${NC}
     Run migration operations
-    
+
     Modes:
       • generate - Create DDL files
       • execute - Execute DDL files
@@ -54,30 +65,44 @@ ${GREEN}COMMANDS:${NC}
 
   ${YELLOW}workflow <operation> [args]${NC}
     Run workflow operations
-    
+
     Operations:
-      • create_renamed_view <owner> <table> - Create view with INSTEAD OF trigger
+      • pre_swap <owner> <table> <new> <old> - Pre-swap validation
+      • post_swap <owner> <table> <old> - Post-swap validation
+      • post_data_load <owner> <table> <source> <source_count> [parallel] - Post-load validation
+      • post_create <owner> <table> [parallel] - Post-create validation and stats
+      • create_renamed_view <owner> <table> - Create view with INSTEAD OF trigger (SECURE)
       • finalize_swap <owner> <table> - Complete swap operation
-      • add_hash_subpartitions <owner> <table> <col> [count] - Add online subpartitions
       • pre_create_partitions <owner> <table> [days] - Pre-create future partitions
+      • add_hash_subpartitions <owner> <table> <col> [count] - Add online subpartitions
 
 ${GREEN}OPTIONS:${NC}
     --connection, -c <conn>     Oracle connection
     --verbose, -v                Verbose output
     --help, -h                   Show help
+    --toad                       Use Toad mode (creates script files)
 
 ${GREEN}EXAMPLES:${NC}
 
   ${CYAN}# Validate table exists${NC}
   $0 validate check_existence APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
 
-  ${CYAN}# Check row count${NC}
+  ${CYAN}# Check table structure and partitioning${NC}
+  $0 validate check_table_structure APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
+
+  ${CYAN}# Check row count with validation${NC}
   $0 validate count_rows APP_OWNER MY_TABLE 1000000 -c "\$ORACLE_CONN"
+
+  ${CYAN}# Check constraint status${NC}
+  $0 validate check_constraints APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
+
+  ${CYAN}# Show partition distribution${NC}
+  $0 validate check_partition_dist APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
 
   ${CYAN}# Complete migration${NC}
   $0 migrate orchestrate APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
 
-  ${CYAN}# Create view with INSTEAD OF trigger${NC}
+  ${CYAN}# Create secure view with INSTEAD OF trigger${NC}
   $0 workflow create_renamed_view APP_OWNER MY_TABLE -c "\$ORACLE_CONN"
 
   ${CYAN}# Add hash subpartitions${NC}
@@ -85,6 +110,19 @@ ${GREEN}EXAMPLES:${NC}
 
   ${CYAN}# Pre-create partitions 2 days ahead${NC}
   $0 workflow pre_create_partitions APP_OWNER MY_TABLE 2 -c "\$ORACLE_CONN"
+
+  ${CYAN}# Post-create validation and statistics${NC}
+  $0 workflow post_create APP_OWNER MY_TABLE_NEW 4 -c "\$ORACLE_CONN"
+
+  ${CYAN}# System operations (SYSDBA)${NC}
+  $0 validate check_privileges
+  $0 validate check_tablespace USERS
+  $0 validate check_sessions_all APP_USER
+  $0 validate check_invalid_objects APP_OWNER
+
+  ${CYAN}# Toad standalone execution${NC}
+  $0 validate check_existence APP_OWNER MY_TABLE --toad
+  $0 workflow create_renamed_view APP_OWNER MY_TABLE --toad
 
 EOF
 }
@@ -95,6 +133,7 @@ OPERATION=""
 ARGS=""
 CONNECTION=""
 VERBOSE=false
+TOAD_MODE=false
 
 # Get connection
 if [ -z "${CONNECTION}" ] && [ -n "${ORACLE_CONN}" ]; then
@@ -123,6 +162,10 @@ validate | v)
 			CONNECTION="$2"
 			shift 2
 			;;
+		--toad)
+			TOAD_MODE=true
+			shift
+			;;
 		*)
 			ARGS="${ARGS} $1"
 			shift
@@ -130,13 +173,17 @@ validate | v)
 		esac
 	done
 
-	if [ -z "${CONNECTION}" ]; then
+	if [ -z "${CONNECTION}" ] && [ "${TOAD_MODE}" = false ]; then
 		echo -e "${RED}ERROR: Connection string required${NC}"
 		echo "Use -c or set ORACLE_CONN"
 		exit 1
 	fi
 
-	${RUNNER} validation "${CONNECTION}" "${OPERATION}" "${ARGS}"
+	if [ "${TOAD_MODE}" = true ]; then
+		EXPLICIT_CLIENT=toad ${RUNNER} validation "${CONNECTION}" "${OPERATION}" "${ARGS}"
+	else
+		${RUNNER} validation "${CONNECTION}" "${OPERATION}" "${ARGS}"
+	fi
 	;;
 
 migrate | m)
@@ -191,6 +238,10 @@ workflow | w)
 			CONNECTION="$2"
 			shift 2
 			;;
+		--toad)
+			TOAD_MODE=true
+			shift
+			;;
 		*)
 			ARGS="${ARGS} $1"
 			shift
@@ -198,13 +249,17 @@ workflow | w)
 		esac
 	done
 
-	if [ -z "${CONNECTION}" ]; then
+	if [ -z "${CONNECTION}" ] && [ "${TOAD_MODE}" = false ]; then
 		echo -e "${RED}ERROR: Connection string required${NC}"
 		echo "Use -c or set ORACLE_CONN"
 		exit 1
 	fi
 
-	${RUNNER} workflow "${CONNECTION}" "${OPERATION}" "${ARGS}"
+	if [ "${TOAD_MODE}" = true ]; then
+		EXPLICIT_CLIENT=toad ${RUNNER} workflow "${CONNECTION}" "${OPERATION}" "${ARGS}"
+	else
+		${RUNNER} workflow "${CONNECTION}" "${OPERATION}" "${ARGS}"
+	fi
 	;;
 
 *)

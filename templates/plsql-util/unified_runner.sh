@@ -35,6 +35,11 @@ find_sql_client() {
 		return
 	fi
 
+	if [ "${EXPLICIT_CLIENT}" = "toad" ]; then
+		SQL_CLIENT="toad"
+		return
+	fi
+
 	if [ "${EXPLICIT_CLIENT}" = "sqlcl" ] && command -v sqlcl >/dev/null 2>&1; then
 		SQL_CLIENT="sqlcl"
 		return
@@ -50,7 +55,7 @@ find_sql_client() {
 		return
 	fi
 
-	echo "${RED}ERROR: No SQL client found. Please install sqlcl or sqlplus${NC}" >&2
+	echo "${RED}ERROR: No SQL client found. Please install sqlcl, sqlplus, or use Toad${NC}" >&2
 	exit 1
 }
 
@@ -95,19 +100,22 @@ execute_validation() {
 	echo "" | tee -a "${LOG_FILE}"
 
 	# Build command with category detection
-	# Determine category based on operation
+	# Determine category based on operation (updated for security fixes)
 	case "${OPERATION}" in
-	check_sessions | check_existence | check_structure | count_rows | check_constraints | check_partitions)
+	check_sessions | check_existence | check_table_structure | count_rows | check_constraints | check_partition_dist)
 		CATEGORY="READONLY"
 		;;
 	enable_constraints | disable_constraints)
 		CATEGORY="WRITE"
 		;;
-	pre_swap | post_swap | post_create | post_load)
+	pre_swap | post_swap | post_data_load | post_create | create_renamed_view | finalize_swap | pre_create_partitions | add_hash_subpartitions)
 		CATEGORY="WORKFLOW"
 		;;
 	drop | rename)
 		CATEGORY="CLEANUP"
+		;;
+	check_privileges | check_tablespace | check_sessions_all | kill_sessions | check_invalid_objects)
+		CATEGORY="SYS"
 		;;
 	*)
 		CATEGORY="READONLY"
@@ -115,10 +123,41 @@ execute_validation() {
 	esac
 
 	# Build command
-	if [ "${SQL_CLIENT}" = "sqlcl" ]; then
-		CMD="echo '@${SQL_SCRIPT} ${CATEGORY} ${OPERATION} ${ARGS}' | sqlcl '${CONNECTION}'"
+	if [ "${SQL_CLIENT}" = "toad" ]; then
+		# For Toad, create a parameterized script file
+		TOAD_SCRIPT="${OUTPUT_DIR}/toad_script.sql"
+		cat > "${TOAD_SCRIPT}" << EOF
+-- Toad Standalone Execution Script
+-- Generated: $(date)
+-- Operation: ${CATEGORY} ${OPERATION} ${ARGS}
+
+-- Set substitution variables for Toad
+DEFINE category = '${CATEGORY}'
+DEFINE operation = '${OPERATION}'
+DEFINE arg3 = '${3:-}'
+DEFINE arg4 = '${4:-}'
+DEFINE arg5 = '${5:-}'
+DEFINE arg6 = '${6:-}'
+DEFINE arg7 = '${7:-}'
+
+-- Execute the main script
+@${SQL_SCRIPT}
+EOF
+		CMD="echo 'Toad script created: ${TOAD_SCRIPT}'"
+		echo "Toad script created: ${TOAD_SCRIPT}" | tee -a "${LOG_FILE}"
+		echo "Open this script in Toad and execute it" | tee -a "${LOG_FILE}"
+	elif [ "${SQL_CLIENT}" = "sqlcl" ]; then
+		if [ "${CATEGORY}" = "SYS" ]; then
+			CMD="echo '@${SQL_SCRIPT} ${CATEGORY} ${OPERATION} ${ARGS}' | sqlcl '/ as sysdba'"
+		else
+			CMD="echo '@${SQL_SCRIPT} ${CATEGORY} ${OPERATION} ${ARGS}' | sqlcl '${CONNECTION}'"
+		fi
 	else
-		CMD="echo '@${SQL_SCRIPT} ${CATEGORY} ${OPERATION} ${ARGS}' | sqlplus -S '${CONNECTION}'"
+		if [ "${CATEGORY}" = "SYS" ]; then
+			CMD="echo '@${SQL_SCRIPT} ${CATEGORY} ${OPERATION} ${ARGS}' | sqlplus -S '/ as sysdba'"
+		else
+			CMD="echo '@${SQL_SCRIPT} ${CATEGORY} ${OPERATION} ${ARGS}' | sqlplus -S '${CONNECTION}'"
+		fi
 	fi
 
 	echo "Executing validation..." | tee -a "${LOG_FILE}"
@@ -126,19 +165,43 @@ execute_validation() {
 	# Execute
 	START_TIME=$(date +%s)
 
-	if eval "${CMD}" >"${OUTPUT_DIR}/validation_output.log" 2>&1; then
+	if [ "${SQL_CLIENT}" = "toad" ]; then
+		# For Toad, just create the script and exit
+		echo -e "${BLUE}✓ Toad script created successfully${NC}" | tee -a "${LOG_FILE}"
+		echo -e "${YELLOW}ℹ Open ${TOAD_SCRIPT} in Toad and execute it${NC}"
+		exit 0
+	elif eval "${CMD}" >"${OUTPUT_DIR}/validation_output.log" 2>&1; then
 		END_TIME=$(date +%s)
 		DURATION=$((END_TIME - START_TIME))
 
 		echo -e "${GREEN}✓ Validation completed (${DURATION}s)${NC}" | tee -a "${LOG_FILE}"
 
-		# Parse results
-		if grep -q "VALIDATION RESULT: PASSED" "${OUTPUT_DIR}/validation_output.log"; then
+		# Parse results (updated for improved error handling)
+		if grep -q "RESULT: PASSED" "${OUTPUT_DIR}/validation_output.log"; then
 			echo -e "${GREEN}✓ Result: PASSED${NC}"
 			exit 0
-		elif grep -q "VALIDATION RESULT: FAILED" "${OUTPUT_DIR}/validation_output.log"; then
+		elif grep -q "RESULT: FAILED" "${OUTPUT_DIR}/validation_output.log"; then
 			echo -e "${RED}✗ Result: FAILED${NC}"
+			# Show error details if available
+			if grep -q "ERROR:" "${OUTPUT_DIR}/validation_output.log"; then
+				echo -e "${YELLOW}Error details:${NC}"
+				grep "ERROR:" "${OUTPUT_DIR}/validation_output.log" | head -3
+			fi
 			exit 1
+		elif grep -q "RESULT: ERROR" "${OUTPUT_DIR}/validation_output.log"; then
+			echo -e "${RED}✗ Result: ERROR${NC}"
+			# Show error details
+			if grep -q "ERROR:" "${OUTPUT_DIR}/validation_output.log"; then
+				echo -e "${YELLOW}Error details:${NC}"
+				grep "ERROR:" "${OUTPUT_DIR}/validation_output.log" | head -3
+			fi
+			exit 1
+		elif grep -q "RESULT: WARNING" "${OUTPUT_DIR}/validation_output.log"; then
+			echo -e "${YELLOW}⚠ Result: WARNING${NC}"
+			exit 2
+		elif grep -q "RESULT: INFO" "${OUTPUT_DIR}/validation_output.log"; then
+			echo -e "${BLUE}ℹ Result: INFO${NC}"
+			exit 0
 		else
 			echo -e "${YELLOW}? Result: UNKNOWN${NC}"
 			exit 2
@@ -245,7 +308,26 @@ execute_workflow() {
 			exit 0
 		elif grep -q "RESULT: FAILED" "${OUTPUT_DIR}/workflow.log"; then
 			echo -e "${RED}✗ Result: FAILED${NC}"
+			# Show error details if available
+			if grep -q "ERROR:" "${OUTPUT_DIR}/workflow.log"; then
+				echo -e "${YELLOW}Error details:${NC}"
+				grep "ERROR:" "${OUTPUT_DIR}/workflow.log" | head -3
+			fi
 			exit 1
+		elif grep -q "RESULT: ERROR" "${OUTPUT_DIR}/workflow.log"; then
+			echo -e "${RED}✗ Result: ERROR${NC}"
+			# Show error details
+			if grep -q "ERROR:" "${OUTPUT_DIR}/workflow.log"; then
+				echo -e "${YELLOW}Error details:${NC}"
+				grep "ERROR:" "${OUTPUT_DIR}/workflow.log" | head -3
+			fi
+			exit 1
+		elif grep -q "RESULT: WARNING" "${OUTPUT_DIR}/workflow.log"; then
+			echo -e "${YELLOW}⚠ Result: WARNING${NC}"
+			exit 2
+		elif grep -q "RESULT: INFO" "${OUTPUT_DIR}/workflow.log"; then
+			echo -e "${BLUE}ℹ Result: INFO${NC}"
+			exit 0
 		else
 			echo -e "${YELLOW}? Result: UNKNOWN${NC}"
 			exit 2
@@ -312,17 +394,42 @@ workflow)
 	echo "Usage: $0 <type> [args...]"
 	echo "  type: validation | migration | orchestrate | finalize | add_subparts | workflow"
 	echo ""
+	echo "Environment Variables:"
+	echo "  SQL_CLIENT_ARG=toad|sqlcl|sqlplus  - Force specific SQL client"
+	echo "  EXPLICIT_CLIENT=toad               - Use Toad mode (creates script files)"
+	echo ""
 	echo "For validation:"
 	echo "  $0 validation <connection> <operation> [args...]"
+	echo "  Operations: check_sessions, check_existence, check_table_structure, count_rows,"
+	echo "             check_constraints, check_partition_dist"
+	echo ""
+	echo "For system operations (requires SYSDBA):"
+	echo "  $0 validation <connection> <operation> [args...]"
+	echo "  Operations: check_privileges, check_tablespace, check_sessions_all,"
+	echo "             kill_sessions, check_invalid_objects"
+	echo "  Note: SYS operations automatically use '/ as sysdba' connection"
+	echo ""
+	echo "For Toad standalone execution:"
+	echo "  EXPLICIT_CLIENT=toad $0 validation <connection> <operation> [args...]"
+	echo "  Creates a script file that can be opened and executed in Toad"
 	echo ""
 	echo "For migration:"
 	echo "  $0 migration <mode> <owner> <table> <connection>"
 	echo ""
+	echo "For workflow operations:"
+	echo "  $0 workflow <connection> <operation> [args...]"
+	echo "  Operations: pre_swap, post_swap, post_data_load, post_create,"
+	echo "             create_renamed_view, finalize_swap, pre_create_partitions,"
+	echo "             add_hash_subpartitions"
+	echo ""
 	echo "For orchestration:"
 	echo "  $0 orchestrate <owner> <table> <connection>"
 	echo ""
-	echo "For workflow:"
-	echo "  $0 workflow <connection> <operation> [args...]"
+	echo "For finalization:"
+	echo "  $0 finalize <owner> <table> <connection>"
+	echo ""
+	echo "For adding subpartitions:"
+	echo "  $0 add_subparts <owner> <table> <subpart_col> <subpart_count> <connection>"
 	exit 1
 	;;
 esac
