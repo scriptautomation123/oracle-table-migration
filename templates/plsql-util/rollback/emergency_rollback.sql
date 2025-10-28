@@ -136,8 +136,11 @@ BEGIN
         
         log_info('Renaming current table to: ' || v_temp_name);
         
-        EXECUTE IMMEDIATE 'ALTER TABLE ' || v_owner || '.' || v_table_name || 
-                         ' RENAME TO ' || v_temp_name;
+        EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+            DBMS_ASSERT.SCHEMA_NAME(v_owner) || '.' || 
+            DBMS_ASSERT.SIMPLE_SQL_NAME(v_table_name) || 
+            ' RENAME TO ' || 
+            DBMS_ASSERT.SIMPLE_SQL_NAME(v_temp_name);
         
         log_success('Safety backup created: ' || v_temp_name);
     ELSE
@@ -151,8 +154,11 @@ BEGIN
     
     log_info('Renaming ' || v_table_name || '_OLD to ' || v_table_name);
     
-    EXECUTE IMMEDIATE 'ALTER TABLE ' || v_owner || '.' || v_table_name || '_OLD' ||
-                     ' RENAME TO ' || v_table_name;
+    EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+        DBMS_ASSERT.SCHEMA_NAME(v_owner) || '.' || 
+        DBMS_ASSERT.SIMPLE_SQL_NAME(v_table_name || '_OLD') ||
+        ' RENAME TO ' || 
+        DBMS_ASSERT.SIMPLE_SQL_NAME(v_table_name);
     
     log_success('Original table restored to active name');
     
@@ -167,7 +173,10 @@ BEGIN
         v_invalid_indexes NUMBER := 0;
     BEGIN
         -- Check table access
-        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || v_owner || '.' || v_table_name || ' WHERE ROWNUM = 1'
+        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || 
+            DBMS_ASSERT.SCHEMA_NAME(v_owner) || '.' || 
+            DBMS_ASSERT.SIMPLE_SQL_NAME(v_table_name) || 
+            ' WHERE ROWNUM = 1'
         INTO v_row_count;
         
         log_success('Table is accessible');

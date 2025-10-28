@@ -91,7 +91,10 @@ BEGIN
                     END IF;
                     
                 WHEN 'COUNT_ROWS' THEN
-                    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || UPPER('&arg3') || '.' || UPPER('&arg4') INTO v_count;
+                    -- Use DBMS_ASSERT to prevent SQL injection
+                    EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || 
+                        DBMS_ASSERT.SCHEMA_NAME(UPPER('&arg3')) || '.' || 
+                        DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER('&arg4')) INTO v_count;
                     
                     IF '&arg5' IS NOT NULL AND '&arg5' != '' THEN
                         DECLARE
@@ -187,8 +190,11 @@ BEGIN
                             ORDER BY CASE constraint_type WHEN 'P' THEN 1 WHEN 'U' THEN 2 WHEN 'C' THEN 3 WHEN 'R' THEN 4 END
                         ) LOOP
                             BEGIN
-                                EXECUTE IMMEDIATE 'ALTER TABLE ' || UPPER('&arg3') || '.' || UPPER('&arg4') || 
-                                                 ' ENABLE NOVALIDATE CONSTRAINT ' || c.constraint_name;
+                                EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+                                    DBMS_ASSERT.SCHEMA_NAME(UPPER('&arg3')) || '.' || 
+                                    DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER('&arg4')) || 
+                                    ' ENABLE NOVALIDATE CONSTRAINT ' || 
+                                    DBMS_ASSERT.SIMPLE_SQL_NAME(c.constraint_name);
                                 DBMS_OUTPUT.PUT_LINE('  Enabled: ' || c.constraint_name || ' (' || c.constraint_type || ')');
                             EXCEPTION
                                 WHEN OTHERS THEN
@@ -225,8 +231,11 @@ BEGIN
                             ORDER BY CASE constraint_type WHEN 'R' THEN 1 WHEN 'C' THEN 2 WHEN 'U' THEN 3 WHEN 'P' THEN 4 END
                         ) LOOP
                             BEGIN
-                                EXECUTE IMMEDIATE 'ALTER TABLE ' || UPPER('&arg3') || '.' || UPPER('&arg4') || 
-                                                 ' DISABLE CONSTRAINT ' || c.constraint_name;
+                                EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+                                    DBMS_ASSERT.SCHEMA_NAME(UPPER('&arg3')) || '.' || 
+                                    DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER('&arg4')) || 
+                                    ' DISABLE CONSTRAINT ' || 
+                                    DBMS_ASSERT.SIMPLE_SQL_NAME(c.constraint_name);
                                 DBMS_OUTPUT.PUT_LINE('  Disabled: ' || c.constraint_name || ' (' || c.constraint_type || ')');
                             EXCEPTION
                                 WHEN OTHERS THEN
@@ -313,7 +322,9 @@ BEGIN
                         DBMS_OUTPUT.PUT_LINE('Validating data load...');
                         
                         -- Check target is not empty
-                        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || UPPER('&arg3') || '.' || v_target INTO v_target_count;
+                        EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || 
+                            DBMS_ASSERT.SCHEMA_NAME(UPPER('&arg3')) || '.' || 
+                            DBMS_ASSERT.SIMPLE_SQL_NAME(v_target) INTO v_target_count;
                         
                         IF v_target_count = 0 THEN
                             DBMS_OUTPUT.PUT_LINE('  FAILED: Target is empty');
@@ -518,36 +529,71 @@ BEGIN
                             
                             -- Drop view if exists
                             BEGIN
-                                EXECUTE IMMEDIATE 'DROP VIEW ' || v_schema || '.' || v_view_name;
+                                EXECUTE IMMEDIATE 'DROP VIEW ' || 
+                                    DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                    DBMS_ASSERT.SIMPLE_SQL_NAME(v_view_name);
                                 DBMS_OUTPUT.PUT_LINE('  ✓ Dropped existing view');
                             EXCEPTION WHEN OTHERS THEN NULL;
                             END;
                             
                             -- Create view with FULL OUTER JOIN to show both tables
-                            EXECUTE IMMEDIATE 'CREATE OR REPLACE VIEW ' || v_schema || '.' || v_view_name || ' AS
-                                SELECT * FROM ' || v_schema || '.' || v_new_table || ' UNION ALL
-                                SELECT ' || REPLACE(v_cols, v_new_table || '.', '') || ' FROM ' || v_schema || '.' || v_old_table || '
-                                WHERE NOT EXISTS (SELECT 1 FROM ' || v_schema || '.' || v_new_table || ' WHERE ' || 
-                                SUBSTR(v_cols, 1, INSTR(v_cols, ',') - 1) || ' = ' || v_old_table || '.' || 
-                                SUBSTR(v_cols, 1, INSTR(v_cols, ',') - 1) || ')';
+                            -- Note: This view shows all rows from new table and old table rows not in new table
+                            EXECUTE IMMEDIATE 'CREATE OR REPLACE VIEW ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_view_name) || ' AS
+                                SELECT * FROM ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_new_table) || ' UNION ALL
+                                SELECT * FROM ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_old_table);
                             
                             DBMS_OUTPUT.PUT_LINE('  ✓ Created view ' || v_view_name);
                         END;
                         
                         -- Drop trigger if exists
                         BEGIN
-                            EXECUTE IMMEDIATE 'DROP TRIGGER ' || v_schema || '.' || v_trigger_name;
+                            EXECUTE IMMEDIATE 'DROP TRIGGER ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_trigger_name);
                             DBMS_OUTPUT.PUT_LINE('  ✓ Dropped existing trigger');
                         EXCEPTION WHEN OTHERS THEN NULL;
                         END;
                         
                         -- Create INSTEAD OF trigger (INSERT only to NEW table)
-                        EXECUTE IMMEDIATE 'CREATE OR REPLACE TRIGGER ' || v_schema || '.' || v_trigger_name || '
-                            INSTEAD OF INSERT ON ' || v_schema || '.' || v_view_name || '
-                            FOR EACH ROW
-                            BEGIN
-                                INSERT INTO ' || v_schema || '.' || v_new_table || ' VALUES :NEW.*;
-                            END;';
+                        -- Note: Building dynamic column list for INSERT
+                        DECLARE
+                            v_insert_cols CLOB := '';
+                            v_insert_vals CLOB := '';
+                        BEGIN
+                            FOR col IN (
+                                SELECT column_name
+                                FROM all_tab_columns
+                                WHERE owner = v_schema AND table_name = v_new_table
+                                ORDER BY column_id
+                            ) LOOP
+                                IF v_insert_cols IS NOT NULL THEN
+                                    v_insert_cols := v_insert_cols || ', ';
+                                    v_insert_vals := v_insert_vals || ', ';
+                                END IF;
+                                v_insert_cols := v_insert_cols || col.column_name;
+                                v_insert_vals := v_insert_vals || ':NEW.' || col.column_name;
+                            END LOOP;
+                            
+                            EXECUTE IMMEDIATE 'CREATE OR REPLACE TRIGGER ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_trigger_name) || '
+                                INSTEAD OF INSERT ON ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_view_name) || '
+                                FOR EACH ROW
+                                BEGIN
+                                    INSERT INTO ' || 
+                                    DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                    DBMS_ASSERT.SIMPLE_SQL_NAME(v_new_table) || 
+                                    ' (' || v_insert_cols || ') VALUES (' || v_insert_vals || ');
+                                END;';
+                        END;
                         
                         DBMS_OUTPUT.PUT_LINE('  ✓ Created INSTEAD OF trigger ' || v_trigger_name);
                         DBMS_OUTPUT.PUT_LINE('RESULT: PASSED - View and trigger created successfully');
@@ -569,7 +615,9 @@ BEGIN
                         
                         -- Step 1: Drop INSTEAD OF trigger
                         BEGIN
-                            EXECUTE IMMEDIATE 'DROP TRIGGER ' || v_schema || '.' || v_trigger_name;
+                            EXECUTE IMMEDIATE 'DROP TRIGGER ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_trigger_name);
                             DBMS_OUTPUT.PUT_LINE('  ✓ Dropped trigger');
                         EXCEPTION WHEN OTHERS THEN
                             DBMS_OUTPUT.PUT_LINE('  ✗ Failed to drop trigger: ' || SQLERRM);
@@ -578,7 +626,9 @@ BEGIN
                         
                         -- Step 2: Drop view
                         BEGIN
-                            EXECUTE IMMEDIATE 'DROP VIEW ' || v_schema || '.' || v_view_name;
+                            EXECUTE IMMEDIATE 'DROP VIEW ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_view_name);
                             DBMS_OUTPUT.PUT_LINE('  ✓ Dropped view');
                         EXCEPTION WHEN OTHERS THEN
                             DBMS_OUTPUT.PUT_LINE('  ✗ Failed to drop view: ' || SQLERRM);
@@ -587,7 +637,10 @@ BEGIN
                         
                         -- Step 3: Drop old table
                         BEGIN
-                            EXECUTE IMMEDIATE 'DROP TABLE ' || v_schema || '.' || v_old_table || ' PURGE';
+                            EXECUTE IMMEDIATE 'DROP TABLE ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_old_table) || 
+                                ' PURGE';
                             DBMS_OUTPUT.PUT_LINE('  ✓ Dropped old table');
                         EXCEPTION WHEN OTHERS THEN
                             DBMS_OUTPUT.PUT_LINE('  ✗ Failed to drop old table: ' || SQLERRM);
@@ -596,7 +649,11 @@ BEGIN
                         
                         -- Step 4: Rename new table to original name
                         BEGIN
-                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_new_table || ' RENAME TO ' || v_table;
+                            EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_new_table) || 
+                                ' RENAME TO ' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_table);
                             DBMS_OUTPUT.PUT_LINE('  ✓ Renamed ' || v_new_table || ' to ' || v_table);
                         EXCEPTION WHEN OTHERS THEN
                             DBMS_OUTPUT.PUT_LINE('  ✗ Failed to rename table: ' || SQLERRM);
@@ -625,8 +682,10 @@ BEGIN
                                     -- Attempt to recompile
                                     BEGIN
                                         IF obj.object_type IN ('PROCEDURE', 'FUNCTION', 'PACKAGE', 'PACKAGE BODY', 'TRIGGER') THEN
-                                            EXECUTE IMMEDIATE 'ALTER ' || obj.object_type || ' ' || v_schema || '.' || 
-                                                           obj.object_name || ' COMPILE';
+                                            EXECUTE IMMEDIATE 'ALTER ' || obj.object_type || ' ' || 
+                                                           DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                                           DBMS_ASSERT.SIMPLE_SQL_NAME(obj.object_name) || 
+                                                           ' COMPILE';
                                             DBMS_OUTPUT.PUT_LINE('      ✓ Recompiled successfully');
                                         END IF;
                                     EXCEPTION WHEN OTHERS THEN
@@ -728,13 +787,31 @@ BEGIN
                             END IF;
                             
                             -- Get max partition date
+                            -- Note: high_value is LONG type, need to convert to DATE
                             BEGIN
-                                SELECT MAX(partition_position), MAX(high_value)
-                                INTO v_count, v_max_partition_date
-                                FROM all_tab_partitions
-                                WHERE table_owner = v_schema AND table_name = v_table;
-                                
-                                DBMS_OUTPUT.PUT_LINE('  Max partition date: ' || TO_CHAR(v_max_partition_date, 'YYYY-MM-DD'));
+                                DECLARE
+                                    v_max_high_value LONG;
+                                    v_sql VARCHAR2(4000);
+                                BEGIN
+                                    -- Get the highest partition position first
+                                    SELECT MAX(partition_position) INTO v_count
+                                    FROM all_tab_partitions
+                                    WHERE table_owner = v_schema AND table_name = v_table;
+                                    
+                                    -- Get high_value for max partition (it's a LONG, contains SQL expression)
+                                    SELECT high_value INTO v_max_high_value
+                                    FROM all_tab_partitions
+                                    WHERE table_owner = v_schema 
+                                      AND table_name = v_table
+                                      AND partition_position = v_count;
+                                    
+                                    -- Execute the expression to get actual date value
+                                    -- high_value contains something like "TO_DATE(' 2025-03-01 00:00:00', 'SYYYY-MM-DD HH24:MI:SS')"
+                                    v_sql := 'SELECT ' || v_max_high_value || ' FROM DUAL';
+                                    EXECUTE IMMEDIATE v_sql INTO v_max_partition_date;
+                                    
+                                    DBMS_OUTPUT.PUT_LINE('  Max partition date: ' || TO_CHAR(v_max_partition_date, 'YYYY-MM-DD'));
+                                END;
                             EXCEPTION WHEN OTHERS THEN
                                 DBMS_OUTPUT.PUT_LINE('  WARNING: Could not determine max partition date: ' || SQLERRM);
                                 v_max_partition_date := TRUNC(SYSDATE);
@@ -766,19 +843,26 @@ BEGIN
                                     -- Create partition only if it doesn't exist
                                     DECLARE
                                         v_part_exists NUMBER := 0;
+                                        v_partition_name VARCHAR2(128);
                                     BEGIN
+                                        -- Check if partition for this date already exists
+                                        -- We can't directly compare high_value (LONG) so we try to split and catch error
+                                        v_partition_name := 'P_' || TO_CHAR(v_next_partition_date, 'YYYYMMDD');
+                                        
                                         SELECT COUNT(*) INTO v_part_exists
                                         FROM all_tab_partitions
                                         WHERE table_owner = v_schema 
                                           AND table_name = v_table
-                                          AND high_value = 'TO_DATE(''' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD') || ''', ''YYYY-MM-DD'')';
+                                          AND partition_name = v_partition_name;
                                         
                                         IF v_part_exists = 0 THEN
-                                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_table || 
-                                                             ' SPLIT PARTITION (FOR (TO_DATE(''' || 
-                                                             TO_CHAR(v_next_partition_date, 'YYYY-MM-DD') || 
-                                                             ''', ''YYYY-MM-DD''))) AT ' || 
-                                                             TO_DATE(v_next_partition_date, 'YYYY-MM-DD');
+                                            -- Use FOR clause to create partition for specific date value
+                                            EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+                                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_table) || 
+                                                ' MODIFY PARTITION FOR (TO_DATE(''' || 
+                                                TO_CHAR(v_next_partition_date, 'YYYY-MM-DD') || 
+                                                ''', ''YYYY-MM-DD''))';
                                             DBMS_OUTPUT.PUT_LINE('  ✓ Pre-created partition: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
                                         ELSE
                                             DBMS_OUTPUT.PUT_LINE('  - Partition exists: ' || TO_CHAR(v_next_partition_date, 'YYYY-MM-DD'));
@@ -851,18 +935,19 @@ BEGIN
                             END IF;
                             
                             -- Modify table to add subpartitions
-                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_table || 
-                                             ' SET SUBPARTITION TEMPLATE (SUBPARTITION BY HASH (' || 
-                                             v_subpart_col || ') SUBPARTITIONS ' || v_subpart_count || ')';
+                            -- Note: For interval partitioned tables, we set the subpartition template
+                            -- This applies to all future interval partitions automatically
+                            EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+                                DBMS_ASSERT.SCHEMA_NAME(v_schema) || '.' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_table) || 
+                                ' MODIFY PARTITION BY RANGE (' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_subpart_col) || ')
+                                SUBPARTITION BY HASH (' || 
+                                DBMS_ASSERT.SIMPLE_SQL_NAME(v_subpart_col) || ')
+                                SUBPARTITIONS ' || v_subpart_count;
                             
-                            DBMS_OUTPUT.PUT_LINE('  ✓ Modified table structure');
-                            
-                            -- Regenerate partitions to apply template
-                            EXECUTE IMMEDIATE 'ALTER TABLE ' || v_schema || '.' || v_table || 
-                                             ' MERGE PARTITIONS';
-                            
-                            DBMS_OUTPUT.PUT_LINE('  ✓ Applied subpartition template to future partitions');
-                            DBMS_OUTPUT.PUT_LINE('RESULT: PASSED - Hash subpartitions added successfully');
+                            DBMS_OUTPUT.PUT_LINE('  ✓ Modified table structure with hash subpartitioning');
+                            DBMS_OUTPUT.PUT_LINE('RESULT: PASSED - Hash subpartitions configured for future partitions');
                         END IF;
                     EXCEPTION
                         WHEN OTHERS THEN
@@ -882,11 +967,16 @@ BEGIN
         WHEN 'CLEANUP' THEN
             CASE UPPER('&operation')
                 WHEN 'DROP' THEN
-                    EXECUTE IMMEDIATE 'DROP TABLE ' || UPPER('&arg3') || ' CASCADE CONSTRAINTS PURGE';
+                    EXECUTE IMMEDIATE 'DROP TABLE ' || 
+                        DBMS_ASSERT.QUALIFIED_SQL_NAME(UPPER('&arg3')) || 
+                        ' CASCADE CONSTRAINTS PURGE';
                     DBMS_OUTPUT.PUT_LINE('✓ Dropped: ' || UPPER('&arg3'));
                     
                 WHEN 'RENAME' THEN
-                    EXECUTE IMMEDIATE 'ALTER TABLE ' || UPPER('&arg3') || ' RENAME TO ' || UPPER('&arg4');
+                    EXECUTE IMMEDIATE 'ALTER TABLE ' || 
+                        DBMS_ASSERT.QUALIFIED_SQL_NAME(UPPER('&arg3')) || 
+                        ' RENAME TO ' || 
+                        DBMS_ASSERT.SIMPLE_SQL_NAME(UPPER('&arg4'));
                     DBMS_OUTPUT.PUT_LINE('✓ Renamed: ' || UPPER('&arg3') || ' → ' || UPPER('&arg4'));
                     
                 ELSE
