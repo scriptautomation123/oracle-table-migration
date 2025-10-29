@@ -1,0 +1,22 @@
+SELECT 'CREATE OR REPLACE VIEW MY_JOINED_VIEW AS ' || CHR(10) ||
+       'SELECT ' || LISTAGG(ac.COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY ac.COLUMN_ID) || CHR(10) ||
+       'FROM TABLE_NEW tn ' || CHR(10) ||
+       'JOIN TABLE_OLD told ON tn.TRACE_ID = told.TRACE_ID;' AS VIEW_DDL
+FROM ALL_TAB_COLUMNS ac
+WHERE ac.OWNER = 'YOUR_SCHEMA_NAME' -- Replace with your schema name
+  AND ac.TABLE_NAME IN ('TABLE_NEW', 'TABLE_OLD');
+
+SELECT 'CREATE OR REPLACE TRIGGER TRG_MY_JOINED_VIEW_IO ' || CHR(10) ||
+       'INSTEAD OF INSERT OR UPDATE OR DELETE ON MY_JOINED_VIEW ' || CHR(10) ||
+       'FOR EACH ROW ' || CHR(10) ||
+       'BEGIN ' || CHR(10) ||
+       '  IF INSERTING THEN ' || CHR(10) ||
+       '    INSERT INTO TABLE_NEW (COLUMN1, COLUMN2, ...) VALUES (:NEW.COLUMN1, :NEW.COLUMN2, ...); ' || CHR(10) || -- Customize columns
+       '  ELSIF UPDATING THEN ' || CHR(10) ||
+       '    UPDATE TABLE_NEW SET COLUMN1 = :NEW.COLUMN1, COLUMN2 = :NEW.COLUMN2, ... WHERE TRACE_ID = :OLD.TRACE_ID; ' || CHR(10) || -- Customize columns and WHERE clause
+       '  ELSIF DELETING THEN ' || CHR(10) ||
+       '    DELETE FROM TABLE_NEW WHERE TRACE_ID = :OLD.TRACE_ID; ' || CHR(10) || -- Customize WHERE clause
+       '  END IF; ' || CHR(10) ||
+       'END; ' || CHR(10) ||
+       '/' AS TRIGGER_DDL
+FROM DUAL;
