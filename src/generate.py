@@ -52,8 +52,8 @@ except ImportError:
 # sys.path modification above requires imports here - this is intentional
 from lib.config_validator import ConfigValidator  # noqa: E402
 from lib.discovery_queries import TableDiscovery  # noqa: E402
-from lib.template_filters import register_custom_filters  # noqa: E402
 from lib.migration_models import MigrationConfig, TableConfig  # noqa: E402
+from lib.template_filters import register_custom_filters  # noqa: E402
 
 
 # Constants
@@ -422,15 +422,15 @@ class DiscoveryCommand(MigrationCommand):
         try:
             with database_service.connection() as connection:
                 discovery = TableDiscovery(
-                    connection,
-                    self.config.environment,
-                    self.config.connection_string
+                    connection, self.config.environment, self.config.connection_string
                 )
                 config = discovery.discover_schema(
                     self.schema, self.include_patterns, self.exclude_patterns
                 )
                 # Use timestamped output directory
-                saved_config_file = discovery.save_config(config, self.output_file, base_output_dir=self.config.output_dir)
+                saved_config_file = discovery.save_config(
+                    config, self.output_file, base_output_dir=self.config.output_dir
+                )
                 if saved_config_file:
                     self.output_file = saved_config_file
                 self._print_next_steps()
@@ -637,7 +637,11 @@ class GenerationCommand(MigrationCommand):
             "migration_settings": table_config.common_settings.migration_settings,
             "columns": current_state.columns,
             "column_list": ", ".join(all_columns) if all_columns else "*",
-            "primary_key_columns": target_config.partition_column if target_config.partition_column else (all_columns[0] if all_columns else "ID"),
+            "primary_key_columns": (
+                target_config.partition_column
+                if target_config.partition_column
+                else (all_columns[0] if all_columns else "ID")
+            ),
             "lob_storage": current_state.lob_storage,
             "storage_parameters": current_state.storage_parameters,
             "indexes": current_state.indexes,
@@ -718,11 +722,14 @@ def run_discovery(
         )
         config = discovery.discover_schema(schema, None, None)
         output_base = output_dir if output_dir else Path("output")
-        return discovery.save_config(config, "migration_config.json", base_output_dir=str(output_base))
+        return discovery.save_config(
+            config, "migration_config.json", base_output_dir=str(output_base)
+        )
 
 
 def run_generation(config_file: Path, output_dir: Optional[Path] = None) -> bool:
     """Generation helper function for runner.py"""
+
     # Create a mock ApplicationConfig for generation
     class MockArgs:
         def __init__(self, config_file):

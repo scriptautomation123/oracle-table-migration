@@ -1,0 +1,50 @@
+
+services:
+  # Oracle Database 23 Free - Optimized for Performance Testing
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart
+    container_name: oracle-test-db
+    environment:
+      # System password
+      ORACLE_PASSWORD: Oracle123!
+
+      # Create HR schema automatically (will be created in default FREEPDB1)
+      APP_USER: hr
+      APP_USER_PASSWORD: hr123
+
+    ports:
+      - 1521:1521
+      # - "5500:5500"  # Oracle EM - uncomment if needed
+
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./init-scripts:/container-entrypoint-initdb.d
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - healthcheck.sh
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+
+    # For non-Swarm mode, use mem_limit instead of deploy.resources
+    mem_limit: 16G
+    mem_reservation: 4G
+    
+    # Shared memory for Oracle SGA - critical for performance
+    shm_size: 4gb
+
+    networks:
+      - oracle-network
+
+    restart: unless-stopped
+
+volumes:
+  oracle-data:
+    driver: local
+
+networks:
+  oracle-network:
+    driver: bridge
