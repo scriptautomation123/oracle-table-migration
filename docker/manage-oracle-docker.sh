@@ -14,7 +14,7 @@ COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 stop_if_running() {
 	local ps_output
 	ps_output=$(docker compose -f "${COMPOSE_FILE}" ps --services --filter "status=running" 2>/dev/null || true)
-	if [[ -n "${ps_output}" ]]; then
+	if [[ -n ${ps_output} ]]; then
 		echo "Stopping containers..."
 		docker compose -f "${COMPOSE_FILE}" stop
 	fi
@@ -148,25 +148,25 @@ cmd_start() {
 
 cmd_help() {
 	cat <<-'EOF'
-	Usage: ./manage-oracle-docker.sh [COMMAND]
+		Usage: ./manage-oracle-docker.sh [COMMAND]
 
-	Commands:
-	  start      Start database (default if no command)
-	  reinit     Reinitialize database (recreate container + run init-scripts/)
-	  cleaninit  Clean everything + reinitialize (pulls fresh image)
-	  clean      Remove all resources (containers, volumes, images)
-	  help       Show this help message
+		Commands:
+		  start      Start database (default if no command)
+		  reinit     Reinitialize database (recreate container + run init-scripts/)
+		  cleaninit  Clean everything + reinitialize (pulls fresh image)
+		  clean      Remove all resources (containers, volumes, images)
+		  help       Show this help message
 
-	Examples:
-	  ./manage-oracle-docker.sh              # Start database
-	  ./manage-oracle-docker.sh reinit       # Fast reinit (keeps image)
-	  ./manage-oracle-docker.sh cleaninit    # Full clean + reinit (re-downloads image)
-	  ./manage-oracle-docker.sh clean        # Cleanup only
+		Examples:
+		  ./manage-oracle-docker.sh              # Start database
+		  ./manage-oracle-docker.sh reinit       # Fast reinit (keeps image)
+		  ./manage-oracle-docker.sh cleaninit    # Full clean + reinit (re-downloads image)
+		  ./manage-oracle-docker.sh clean        # Cleanup only
 
-	Workflow:
-	  1. Edit init-scripts/init.sh (add your schemas/tables)
-	  2. Run: ./manage-oracle-docker.sh reinit
-	  3. Database recreates and runs your init script
+		Workflow:
+		  1. Edit init-scripts/init.sh (add your schemas/tables)
+		  2. Run: ./manage-oracle-docker.sh reinit
+		  3. Database recreates and runs your init script
 	EOF
 }
 
@@ -175,25 +175,25 @@ cmd_help() {
 # ============================================================================
 
 case "${1:-start}" in
-	start)
-		cmd_start
-		;;
-	reinit)
-		cmd_reinit
-		;;
-	cleaninit)
-		cmd_cleaninit
-		;;
-	clean)
-		cmd_clean
-		;;
-	help | -h | --help)
-		cmd_help
-		;;
-	*)
-		echo "Error: Unknown command '${1}'"
-		echo ""
-		cmd_help
-		exit 1
-		;;
+start)
+	cmd_start
+	;;
+reinit)
+	cmd_reinit
+	;;
+cleaninit)
+	cmd_cleaninit
+	;;
+clean)
+	cmd_clean
+	;;
+help | -h | --help)
+	cmd_help
+	;;
+*)
+	echo "Error: Unknown command '${1}'"
+	echo ""
+	cmd_help
+	exit 1
+	;;
 esac

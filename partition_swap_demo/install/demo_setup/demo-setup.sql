@@ -16,6 +16,57 @@
 SET ECHO ON
 SET SERVEROUTPUT ON
 SET TIMING ON
+WHENEVER SQLERROR CONTINUE
+
+PROMPT ========================================
+PROMPT Checking for existing objects
+PROMPT ========================================
+
+-- Check if tables exist
+DECLARE
+    v_count NUMBER;
+    v_response VARCHAR2(1);
+BEGIN
+    SELECT COUNT(*)
+    INTO v_count
+    FROM user_tables
+    WHERE table_name IN ('ACTIVE_TRANSACTIONS', 'STAGING_TRANSACTIONS', 'HISTORY_TRANSACTIONS');
+    
+    IF v_count > 0 THEN
+        DBMS_OUTPUT.PUT_LINE('Found ' || v_count || ' existing table(s)');
+    ELSE
+        DBMS_OUTPUT.PUT_LINE('No existing tables found - proceeding with creation');
+    END IF;
+END;
+/
+
+ACCEPT v_drop_choice CHAR PROMPT 'Drop and recreate existing objects? (Y/N): ' DEFAULT 'N'
+
+DECLARE
+    v_choice VARCHAR2(1) := UPPER('&v_drop_choice');
+    v_count NUMBER;
+BEGIN
+    SELECT COUNT(*)
+    INTO v_count
+    FROM user_tables
+    WHERE table_name IN ('ACTIVE_TRANSACTIONS', 'STAGING_TRANSACTIONS', 'HISTORY_TRANSACTIONS');
+    
+    IF v_count > 0 THEN
+        IF v_choice = 'Y' THEN
+            DBMS_OUTPUT.PUT_LINE('Dropping existing tables...');
+            
+            FOR t IN (SELECT table_name FROM user_tables 
+                     WHERE table_name IN ('ACTIVE_TRANSACTIONS', 'STAGING_TRANSACTIONS', 'HISTORY_TRANSACTIONS')) LOOP
+                EXECUTE IMMEDIATE 'DROP TABLE ' || t.table_name || ' CASCADE CONSTRAINTS PURGE';
+                DBMS_OUTPUT.PUT_LINE('Dropped table: ' || t.table_name);
+            END LOOP;
+        ELSE
+            DBMS_OUTPUT.PUT_LINE('Tables already exist - exiting without changes');
+            RAISE_APPLICATION_ERROR(-20001, 'User chose not to drop existing tables');
+        END IF;
+    END IF;
+END;
+/
 
 PROMPT ========================================
 PROMPT Creating ACTIVE_TRANSACTIONS Table
@@ -255,3 +306,5 @@ PROMPT   - idx_*_customer
 PROMPT   - idx_*_type
 PROMPT   - idx_*_status
 PROMPT ========================================
+
+EXIT

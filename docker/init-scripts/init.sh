@@ -5,8 +5,8 @@ echo "Initializing Oracle database..."
 
 # Run partition swap setup first if it exists
 if [ -f "$(dirname "$0")/partition_swap_setup.sql" ]; then
-    echo "Setting up partition swap demo..."
-    sqlplus -s hr/hr123@//localhost/FREEPDB1 @"$(dirname "$0")/partition_swap_setup.sql"
+	echo "Setting up partition swap demo..."
+	sqlplus -s hr/hr123@//localhost/FREEPDB1 @"$(dirname "$0")/partition_swap_setup.sql"
 fi
 
 # Connect as HR user and do everything

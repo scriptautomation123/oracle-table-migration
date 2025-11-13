@@ -135,5 +135,5 @@ echo "  docker compose -f ${COMPOSE_FILE} exec oracle sqlplus hr/hr123@FREEPDB1"
 echo ""
 echo "Available Commands:"
 Use case: Testing init scripts repeatedly
-./manage-oracle-docker.sh              # Start
+./manage-oracle-docker.sh # Start
 echo ""
